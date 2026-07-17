@@ -22,8 +22,8 @@ class WifiMonitorApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Wi-Fi Speed Monitor")
-        self.geometry("760x720")
-        self.minsize(720, 640)
+        self.geometry("860x760")
+        self.minsize(780, 680)
 
         self.status_queue: queue.Queue[str] = queue.Queue()
         self.profile_rows: list[dict[str, Any]] = []
@@ -49,7 +49,24 @@ class WifiMonitorApp(tk.Tk):
         root = ttk.Frame(self, padding=16)
         root.pack(fill=tk.BOTH, expand=True)
 
-        settings = ttk.LabelFrame(root, text="Pengaturan")
+        notebook = ttk.Notebook(root)
+        notebook.pack(fill=tk.BOTH, expand=True)
+
+        config_tab = ttk.Frame(notebook, padding=14)
+        run_tab = ttk.Frame(notebook, padding=14)
+        help_tab = ttk.Frame(notebook, padding=14)
+        notebook.add(config_tab, text="1. Konfigurasi")
+        notebook.add(run_tab, text="2. Jadwal & Tes")
+        notebook.add(help_tab, text="Bantuan")
+
+        intro = ttk.Label(
+            config_tab,
+            text="Mulai dari sini: isi identitas komputer, atur koneksi, lalu tambahkan daftar Wi-Fi yang akan dites.",
+            wraplength=760,
+        )
+        intro.pack(fill=tk.X, pady=(0, 10))
+
+        settings = ttk.LabelFrame(config_tab, text="Langkah 1 - Identitas dan opsi koneksi")
         settings.pack(fill=tk.X)
         settings.columnconfigure(1, weight=1)
 
@@ -80,8 +97,33 @@ class WifiMonitorApp(tk.Tk):
             row=3, column=1, sticky="w", padx=10, pady=8
         )
 
-        schedule = ttk.LabelFrame(root, text="Jadwal Tes")
-        schedule.pack(fill=tk.X, pady=(14, 0))
+        profiles = ttk.LabelFrame(config_tab, text="Langkah 2 - Daftar Wi-Fi")
+        profiles.pack(fill=tk.BOTH, expand=True, pady=(14, 0))
+
+        header = ttk.Frame(profiles)
+        header.pack(fill=tk.X, padx=10, pady=(8, 2))
+        for index, text in enumerate(("SSID", "Password", "", "Label laporan")):
+            ttk.Label(header, text=text).grid(row=0, column=index, sticky="w", padx=4)
+        for index in (0, 1, 3):
+            header.columnconfigure(index, weight=1)
+
+        self.profile_list = ttk.Frame(profiles)
+        self.profile_list.pack(fill=tk.BOTH, expand=True, padx=10)
+
+        config_actions = ttk.Frame(config_tab)
+        config_actions.pack(fill=tk.X, pady=(14, 0))
+        ttk.Button(config_actions, text="Tambah Wi-Fi", command=self._add_profile).pack(side=tk.LEFT)
+        ttk.Button(config_actions, text="Simpan Config", command=self._save_config).pack(side=tk.LEFT, padx=8)
+
+        run_intro = ttk.Label(
+            run_tab,
+            text="Setelah konfigurasi tersimpan, pilih jalankan tes manual atau pasang jadwal otomatis.",
+            wraplength=760,
+        )
+        run_intro.pack(fill=tk.X, pady=(0, 10))
+
+        schedule = ttk.LabelFrame(run_tab, text="Langkah 3 - Jadwal otomatis")
+        schedule.pack(fill=tk.X)
         schedule.columnconfigure(1, weight=1)
         schedule.columnconfigure(3, weight=1)
 
@@ -124,28 +166,41 @@ class WifiMonitorApp(tk.Tk):
         ):
             variable.trace_add("write", lambda *_: self._refresh_schedule_preview())
 
-        profiles = ttk.LabelFrame(root, text="Daftar Wi-Fi")
-        profiles.pack(fill=tk.BOTH, expand=True, pady=(14, 0))
-
-        header = ttk.Frame(profiles)
-        header.pack(fill=tk.X, padx=10, pady=(8, 2))
-        for index, text in enumerate(("SSID", "Password", "", "Label laporan")):
-            ttk.Label(header, text=text).grid(row=0, column=index, sticky="w", padx=4)
-        for index in (0, 1, 3):
-            header.columnconfigure(index, weight=1)
-
-        self.profile_list = ttk.Frame(profiles)
-        self.profile_list.pack(fill=tk.BOTH, expand=True, padx=10)
-
-        actions = ttk.Frame(root)
+        actions = ttk.LabelFrame(run_tab, text="Langkah 4 - Jalankan tes")
         actions.pack(fill=tk.X, pady=(14, 0))
-        ttk.Button(actions, text="Tambah Wi-Fi", command=self._add_profile).pack(side=tk.LEFT)
-        ttk.Button(actions, text="Simpan Config", command=self._save_config).pack(side=tk.LEFT, padx=8)
-        ttk.Button(actions, text="Jalankan Tes", command=self._run_test).pack(side=tk.LEFT)
-        ttk.Button(actions, text="Jalankan Final", command=lambda: self._run_test(final=True)).pack(side=tk.LEFT, padx=8)
+        ttk.Button(actions, text="Simpan Config", command=self._save_config).pack(side=tk.LEFT, padx=10, pady=10)
+        ttk.Button(actions, text="Jalankan Tes Sekarang", command=self._run_test).pack(side=tk.LEFT, padx=(0, 8), pady=10)
+        ttk.Button(actions, text="Jalankan Final", command=lambda: self._run_test(final=True)).pack(
+            side=tk.LEFT, padx=(0, 8), pady=10
+        )
 
-        self.status = tk.Text(root, height=7, state=tk.DISABLED, wrap="word")
-        self.status.pack(fill=tk.X, pady=(14, 0))
+        status_box = ttk.LabelFrame(run_tab, text="Hasil proses")
+        status_box.pack(fill=tk.BOTH, expand=True, pady=(14, 0))
+        self.status = tk.Text(status_box, height=11, state=tk.DISABLED, wrap="word")
+        self.status.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        help_text = tk.Text(help_tab, height=20, state=tk.NORMAL, wrap="word")
+        help_text.pack(fill=tk.BOTH, expand=True)
+        help_text.insert(
+            tk.END,
+            "Cara pakai cepat:\n\n"
+            "1. Buka tab 1. Konfigurasi.\n"
+            "2. Isi Nama komputer.\n"
+            "3. Isi waktu tunggu koneksi, jeda antar Wi-Fi, dan retry koneksi.\n"
+            "4. Tambahkan SSID Wi-Fi, password, dan label laporan. Tombol mata menampilkan atau menyembunyikan password.\n"
+            "5. Klik Simpan Config.\n\n"
+            "Tes manual:\n"
+            "1. Buka tab 2. Jadwal & Tes.\n"
+            "2. Klik Jalankan Tes Sekarang.\n"
+            "3. Lihat ringkasan OK/GAGAL di Hasil proses.\n\n"
+            "Jadwal otomatis:\n"
+            "1. Aktifkan jadwal.\n"
+            "2. Isi jam mulai, jam selesai, interval menit, dan jam final jika diperlukan.\n"
+            "3. Klik Pasang Jadwal.\n"
+            "4. Klik Cek Jadwal untuk memastikan scheduler OS sudah aktif.\n\n"
+            "Jika SSID tidak ditemukan atau password salah, aplikasi tetap membuat laporan dengan status GAGAL, Tipe Error, dan Keterangan.",
+        )
+        help_text.configure(state=tk.DISABLED)
 
     def _load_existing_config(self) -> None:
         if CONFIG_FILE.exists():
