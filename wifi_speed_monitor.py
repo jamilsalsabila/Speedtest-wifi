@@ -16,12 +16,15 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
+from openpyxl.chart import LineChart, Reference
+from openpyxl.formatting.rule import ColorScaleRule
+from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment, Font, PatternFill
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A3, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.json"
@@ -275,15 +278,45 @@ def read_rows() -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def day_name(date_text: str) -> str:
+    names = {
+        0: "Senin",
+        1: "Selasa",
+        2: "Rabu",
+        3: "Kamis",
+        4: "Jumat",
+        5: "Sabtu",
+        6: "Minggu",
+    }
+    try:
+        return names[datetime.strptime(date_text, "%Y-%m-%d").weekday()]
+    except ValueError:
+        return "-"
+
+
+def safe_float(value: str) -> float | None:
+    if value in {"", None}:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def sort_report_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    return sorted(rows, key=lambda r: (r.get("tanggal", ""), r.get("waktu", ""), r.get("wifi", "")))
+
+
 def write_excel(rows: list[dict[str, str]], month_key: str) -> Path:
     output = REPORT_DIR / f"laporan_wifi_{month_key}.xlsx"
-    selected = [r for r in rows if r["tanggal"].startswith(month_key)]
+    selected = sort_report_rows([r for r in rows if r["tanggal"].startswith(month_key)])
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Hasil Speedtest"
     ws.append([
         "Tanggal",
+        "Hari",
         "Waktu",
         "Komputer",
         "Wi-Fi",
@@ -297,12 +330,13 @@ def write_excel(rows: list[dict[str, str]], month_key: str) -> Path:
     for row in selected:
         ws.append([
             row["tanggal"],
+            day_name(row["tanggal"]),
             row["waktu"],
             row["komputer"],
             row["wifi"],
-            float(row["download_mbps"]) if row["download_mbps"] else None,
-            float(row["upload_mbps"]) if row["upload_mbps"] else None,
-            float(row["ping_ms"]) if row["ping_ms"] else None,
+            safe_float(row["download_mbps"]),
+            safe_float(row["upload_mbps"]),
+            safe_float(row["ping_ms"]),
             row["status"],
             row["error"],
         ])
@@ -313,51 +347,163 @@ def write_excel(rows: list[dict[str, str]], month_key: str) -> Path:
         cell.fill = fill
         cell.alignment = Alignment(horizontal="center")
 
-    widths = [13, 11, 24, 23, 18, 17, 12, 12, 50]
+    widths = [13, 12, 11, 24, 23, 18, 17, 12, 12, 50]
     for index, width in enumerate(widths, start=1):
-        ws.column_dimensions[chr(64 + index)].width = width
+        ws.column_dimensions[get_column_letter(index)].width = width
 
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
+    ws["L1"] = "Buka Grafik"
+    ws["L1"].hyperlink = "#'Grafik'!A1"
+    ws["L1"].font = Font(bold=True, color="FFFFFF")
+    ws["L1"].fill = PatternFill("solid", fgColor="4472C4")
+    ws["L1"].alignment = Alignment(horizontal="center")
+    ws.column_dimensions["L"].width = 16
+
+    write_graph_sheet(wb, selected)
     wb.save(output)
     return output
 
 
+def write_graph_sheet(wb: Workbook, rows: list[dict[str, str]]) -> None:
+    ws = wb.create_sheet("Grafik")
+    ws.freeze_panes = "B3"
+    ws["A1"] = "Grafik Kecepatan Wi-Fi"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = "Baris = tanggal/hari, kolom = jam. Nilai memakai rata-rata jika ada beberapa Wi-Fi pada jam yang sama."
+
+    times = sorted({row["waktu"][:5] for row in rows if row.get("waktu")})
+    dates = sorted({row["tanggal"] for row in rows if row.get("tanggal")})
+    metrics = [
+        ("Download (Mbps)", "download_mbps"),
+        ("Upload (Mbps)", "upload_mbps"),
+        ("Ping (ms)", "ping_ms"),
+    ]
+
+    start_row = 4
+    for title, key in metrics:
+        start_row = write_metric_matrix(ws, rows, dates, times, title, key, start_row)
+        start_row += 3
+
+    ws.column_dimensions["A"].width = 24
+    for column in range(2, len(times) + 2):
+        ws.column_dimensions[get_column_letter(column)].width = 11
+
+
+def write_metric_matrix(
+    ws: Any,
+    rows: list[dict[str, str]],
+    dates: list[str],
+    times: list[str],
+    title: str,
+    metric_key: str,
+    start_row: int,
+) -> int:
+    ws.cell(start_row, 1, title).font = Font(bold=True, size=12)
+    header_row = start_row + 1
+    ws.cell(header_row, 1, "Tanggal / Hari")
+    for column, time_label in enumerate(times, start=2):
+        ws.cell(header_row, column, time_label)
+
+    buckets: dict[tuple[str, str], list[float]] = {}
+    for row in rows:
+        value = safe_float(row.get(metric_key, ""))
+        if value is None:
+            continue
+        key = (row["tanggal"], row["waktu"][:5])
+        buckets.setdefault(key, []).append(value)
+
+    for row_index, date_text in enumerate(dates, start=header_row + 1):
+        ws.cell(row_index, 1, f"{date_text} ({day_name(date_text)})")
+        for column, time_label in enumerate(times, start=2):
+            values = buckets.get((date_text, time_label), [])
+            if values:
+                ws.cell(row_index, column, round(sum(values) / len(values), 2))
+
+    end_row = header_row + len(dates)
+    end_column = max(2, len(times) + 1)
+    for row in ws.iter_rows(min_row=header_row, max_row=end_row, min_col=1, max_col=end_column):
+        for cell in row:
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+    for cell in ws[header_row]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="D9EAF7")
+
+    if dates and times:
+        data_range = f"B{header_row + 1}:{get_column_letter(end_column)}{end_row}"
+        ws.conditional_formatting.add(
+            data_range,
+            ColorScaleRule(
+                start_type="min",
+                start_color="F8696B",
+                mid_type="percentile",
+                mid_value=50,
+                mid_color="FFEB84",
+                end_type="max",
+                end_color="63BE7B",
+            ),
+        )
+        chart = LineChart()
+        chart.title = title
+        chart.y_axis.title = title
+        chart.x_axis.title = "Jam"
+        data = Reference(ws, min_col=1, min_row=header_row, max_col=end_column, max_row=end_row)
+        categories = Reference(ws, min_col=2, min_row=header_row, max_col=end_column, max_row=header_row)
+        chart.add_data(data, from_rows=True, titles_from_data=True)
+        chart.set_categories(categories)
+        chart.height = 7
+        chart.width = 18
+        ws.add_chart(chart, f"{get_column_letter(end_column + 2)}{start_row}")
+
+    return end_row
+
+
 def write_daily_pdf(rows: list[dict[str, str]], date_key: str) -> Path:
     output = REPORT_DIR / f"laporan_wifi_{date_key}.pdf"
-    selected = [r for r in rows if r["tanggal"] == date_key]
+    selected = sort_report_rows([r for r in rows if r["tanggal"] == date_key])
 
     doc = SimpleDocTemplate(
         str(output),
-        pagesize=landscape(A4),
-        rightMargin=10 * mm,
-        leftMargin=10 * mm,
-        topMargin=10 * mm,
-        bottomMargin=10 * mm,
+        pagesize=landscape(A3),
+        rightMargin=8 * mm,
+        leftMargin=8 * mm,
+        topMargin=8 * mm,
+        bottomMargin=8 * mm,
     )
     styles = getSampleStyleSheet()
+    cell_style = styles["BodyText"]
+    cell_style.fontSize = 7
+    cell_style.leading = 8
     story = [
         Paragraph(f"Laporan Kecepatan Wi-Fi - {date_key}", styles["Title"]),
         Spacer(1, 5 * mm),
     ]
 
-    table_data = [["Tanggal", "Waktu", "Komputer", "Wi-Fi", "Download", "Upload", "Ping", "Status"]]
+    table_data = [[
+        "Tanggal", "Hari", "Waktu", "Komputer", "Wi-Fi",
+        "Download", "Upload", "Ping", "Status", "Keterangan"
+    ]]
     for row in selected:
         table_data.append([
             row["tanggal"],
+            day_name(row["tanggal"]),
             row["waktu"],
-            row["komputer"],
-            row["wifi"],
+            Paragraph(row["komputer"], cell_style),
+            Paragraph(row["wifi"], cell_style),
             f'{row["download_mbps"]} Mbps' if row["download_mbps"] else "-",
             f'{row["upload_mbps"]} Mbps' if row["upload_mbps"] else "-",
             f'{row["ping_ms"]} ms' if row["ping_ms"] else "-",
             row["status"],
+            Paragraph(row["error"] or "-", cell_style),
         ])
 
-    table = Table(
+    table = LongTable(
         table_data,
         repeatRows=1,
-        colWidths=[25 * mm, 20 * mm, 42 * mm, 40 * mm, 31 * mm, 29 * mm, 23 * mm, 22 * mm],
+        colWidths=[
+            25 * mm, 22 * mm, 18 * mm, 42 * mm, 40 * mm,
+            29 * mm, 29 * mm, 22 * mm, 18 * mm, 129 * mm,
+        ],
     )
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
