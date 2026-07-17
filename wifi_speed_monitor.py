@@ -346,6 +346,8 @@ def write_excel(rows: list[dict[str, str]], month_key: str) -> Path:
         cell.font = Font(bold=True)
         cell.fill = fill
         cell.alignment = Alignment(horizontal="center")
+    for cell in ws["J"]:
+        cell.alignment = Alignment(vertical="top", wrap_text=True)
 
     widths = [13, 12, 11, 24, 23, 18, 17, 12, 12, 50]
     for index, width in enumerate(widths, start=1):
@@ -375,14 +377,14 @@ def write_graph_sheet(wb: Workbook, rows: list[dict[str, str]]) -> None:
     times = sorted({row["waktu"][:5] for row in rows if row.get("waktu")})
     dates = sorted({row["tanggal"] for row in rows if row.get("tanggal")})
     metrics = [
-        ("Download (Mbps)", "download_mbps"),
-        ("Upload (Mbps)", "upload_mbps"),
-        ("Ping (ms)", "ping_ms"),
+        ("Download (Mbps)", "download_mbps", True),
+        ("Upload (Mbps)", "upload_mbps", True),
+        ("Ping (ms)", "ping_ms", False),
     ]
 
     start_row = 4
-    for title, key in metrics:
-        start_row = write_metric_matrix(ws, rows, dates, times, title, key, start_row)
+    for title, key, higher_is_better in metrics:
+        start_row = write_metric_matrix(ws, rows, dates, times, title, key, higher_is_better, start_row)
         start_row += 3
 
     ws.column_dimensions["A"].width = 24
@@ -397,6 +399,7 @@ def write_metric_matrix(
     times: list[str],
     title: str,
     metric_key: str,
+    higher_is_better: bool,
     start_row: int,
 ) -> int:
     ws.cell(start_row, 1, title).font = Font(bold=True, size=12)
@@ -431,29 +434,51 @@ def write_metric_matrix(
 
     if dates and times:
         data_range = f"B{header_row + 1}:{get_column_letter(end_column)}{end_row}"
+        start_color, end_color = ("F8696B", "63BE7B")
+        if not higher_is_better:
+            start_color, end_color = end_color, start_color
         ws.conditional_formatting.add(
             data_range,
             ColorScaleRule(
                 start_type="min",
-                start_color="F8696B",
+                start_color=start_color,
                 mid_type="percentile",
                 mid_value=50,
                 mid_color="FFEB84",
                 end_type="max",
-                end_color="63BE7B",
+                end_color=end_color,
             ),
         )
+
+        chart_data_col = end_column + 2
+        chart_label_col = chart_data_col
+        chart_value_col = chart_data_col + 1
+        ws.cell(header_row, chart_label_col, "Label")
+        ws.cell(header_row, chart_value_col, title)
+        chart_row = header_row + 1
+        for date_text in dates:
+            for time_label in times:
+                values = buckets.get((date_text, time_label), [])
+                if not values:
+                    continue
+                ws.cell(chart_row, chart_label_col, f"{date_text} {day_name(date_text)} {time_label}")
+                ws.cell(chart_row, chart_value_col, round(sum(values) / len(values), 2))
+                chart_row += 1
+
         chart = LineChart()
         chart.title = title
         chart.y_axis.title = title
-        chart.x_axis.title = "Jam"
-        data = Reference(ws, min_col=1, min_row=header_row, max_col=end_column, max_row=end_row)
-        categories = Reference(ws, min_col=2, min_row=header_row, max_col=end_column, max_row=header_row)
-        chart.add_data(data, from_rows=True, titles_from_data=True)
-        chart.set_categories(categories)
+        chart.x_axis.title = "Tanggal / Hari / Jam"
+        if chart_row > header_row + 1:
+            data = Reference(ws, min_col=chart_value_col, min_row=header_row, max_row=chart_row - 1)
+            categories = Reference(ws, min_col=chart_label_col, min_row=header_row + 1, max_row=chart_row - 1)
+            chart.add_data(data, titles_from_data=True)
+            chart.set_categories(categories)
         chart.height = 7
         chart.width = 18
-        ws.add_chart(chart, f"{get_column_letter(end_column + 2)}{start_row}")
+        ws.add_chart(chart, f"{get_column_letter(chart_value_col + 2)}{start_row}")
+        ws.column_dimensions[get_column_letter(chart_label_col)].width = 24
+        ws.column_dimensions[get_column_letter(chart_value_col)].width = 16
 
     return end_row
 
