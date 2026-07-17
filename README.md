@@ -9,7 +9,7 @@ Daftar Wi-Fi bisa diisi lewat GUI atau file `config.json`.
 
 ## Fitur
 
-- GUI untuk mengisi nama komputer, SSID, password, label laporan, jadwal tes, dan opsi shutdown.
+- GUI untuk mengisi nama komputer, SSID, password, nama di laporan, jadwal tes, dan opsi shutdown.
 - CLI untuk dijalankan manual atau lewat scheduler.
 - Koneksi Wi-Fi lintas OS:
   - Windows: `netsh`
@@ -144,7 +144,7 @@ Jadwal bisa diatur lewat GUI pada bagian `Jadwal Tes`:
 
 - `Mulai`: jam tes pertama.
 - `Selesai`: batas jam tes reguler terakhir.
-- `Setiap menit`: interval tes.
+- `Interval (menit)`: jarak antar tes otomatis.
 - `Jam final`: run tambahan dengan argumen `--final`.
 
 Klik `Pasang Jadwal` setelah konfigurasi disimpan. Contoh: mulai `08:30`,

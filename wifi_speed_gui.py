@@ -102,7 +102,7 @@ class WifiMonitorApp(tk.Tk):
 
         header = ttk.Frame(profiles)
         header.pack(fill=tk.X, padx=10, pady=(8, 2))
-        for index, text in enumerate(("SSID", "Password", "", "Label laporan")):
+        for index, text in enumerate(("SSID", "Password", "", "Nama di laporan")):
             ttk.Label(header, text=text).grid(row=0, column=index, sticky="w", padx=4)
         for index in (0, 1, 3):
             header.columnconfigure(index, weight=1)
@@ -145,7 +145,7 @@ class WifiMonitorApp(tk.Tk):
         ttk.Label(schedule, text="Selesai").grid(row=1, column=2, sticky="w", padx=10, pady=6)
         ttk.Entry(schedule, textvariable=self.schedule_end, width=8).grid(row=1, column=3, sticky="w", padx=10, pady=6)
 
-        ttk.Label(schedule, text="Setiap menit").grid(row=2, column=0, sticky="w", padx=10, pady=6)
+        ttk.Label(schedule, text="Interval (menit)").grid(row=2, column=0, sticky="w", padx=10, pady=6)
         ttk.Spinbox(schedule, from_=5, to=1440, increment=5, textvariable=self.schedule_frequency, width=8).grid(
             row=2, column=1, sticky="w", padx=10, pady=6
         )
@@ -187,8 +187,9 @@ class WifiMonitorApp(tk.Tk):
             "1. Buka tab 1. Konfigurasi.\n"
             "2. Isi Nama komputer.\n"
             "3. Isi waktu tunggu koneksi, jeda antar Wi-Fi, dan retry koneksi.\n"
-            "4. Tambahkan SSID Wi-Fi, password, dan label laporan. Tombol mata menampilkan atau menyembunyikan password.\n"
-            "5. Klik Simpan Config.\n\n"
+            "4. Tambahkan SSID Wi-Fi, password, dan nama di laporan. Nama di laporan akan tampil di kolom Wi-Fi pada Excel/PDF.\n"
+            "5. Icon mata menampilkan password, icon mata dicoret menyembunyikan password kembali.\n"
+            "6. Klik Simpan Config.\n\n"
             "Tes manual:\n"
             "1. Buka tab 2. Jadwal & Tes.\n"
             "2. Klik Jalankan Tes Sekarang.\n"
@@ -245,12 +246,7 @@ class WifiMonitorApp(tk.Tk):
         ttk.Entry(row_frame, textvariable=ssid).grid(row=0, column=0, sticky="ew", padx=4)
         password_entry = ttk.Entry(row_frame, textvariable=password, show="*")
         password_entry.grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Button(
-            row_frame,
-            text="👁",
-            width=3,
-            command=lambda: self._toggle_password(password_entry, password_visible),
-        ).grid(row=0, column=2, padx=(0, 4))
+        self._create_eye_toggle(row_frame, password_entry, password_visible).grid(row=0, column=2, padx=(0, 4))
         ttk.Entry(row_frame, textvariable=label).grid(row=0, column=3, sticky="ew", padx=4)
         ttk.Button(row_frame, text="Hapus", command=lambda: self._remove_profile(row_frame)).grid(
             row=0, column=4, padx=(8, 0)
@@ -264,6 +260,27 @@ class WifiMonitorApp(tk.Tk):
     def _toggle_password(self, entry: ttk.Entry, visible: tk.BooleanVar) -> None:
         visible.set(not visible.get())
         entry.configure(show="" if visible.get() else "*")
+
+    def _create_eye_toggle(self, parent: ttk.Frame, entry: ttk.Entry, visible: tk.BooleanVar) -> tk.Canvas:
+        canvas = tk.Canvas(parent, width=30, height=24, highlightthickness=1, highlightbackground="#B7B7B7")
+        canvas.configure(background="white", cursor="hand2")
+        self._draw_eye_icon(canvas, visible.get())
+
+        def toggle(_event: tk.Event) -> None:
+            self._toggle_password(entry, visible)
+            self._draw_eye_icon(canvas, visible.get())
+
+        canvas.bind("<Button-1>", toggle)
+        return canvas
+
+    def _draw_eye_icon(self, canvas: tk.Canvas, visible: bool) -> None:
+        canvas.delete("all")
+        color = "#333333"
+        canvas.create_arc(5, 6, 25, 19, start=20, extent=140, style=tk.ARC, outline=color, width=2)
+        canvas.create_arc(5, 5, 25, 18, start=200, extent=140, style=tk.ARC, outline=color, width=2)
+        canvas.create_oval(12, 9, 18, 15, fill=color, outline=color)
+        if visible:
+            canvas.create_line(6, 20, 24, 4, fill=color, width=2)
 
     def _remove_profile(self, frame: ttk.Frame) -> None:
         self.profile_rows = [row for row in self.profile_rows if row["frame"] is not frame]
