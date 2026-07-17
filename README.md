@@ -94,6 +94,7 @@ Alternatifnya, salin `config.example.json` menjadi `config.json` dan edit isinya
   "computer_name": "Komputer 1",
   "settle_seconds": 20,
   "gap_between_tests_seconds": 20,
+  "connection_retries": 2,
   "shutdown_after_final": false,
   "shutdown_delay_seconds": 30,
   "schedule": {
@@ -112,6 +113,11 @@ Alternatifnya, salin `config.example.json` menjadi `config.json` dan edit isinya
   ]
 }
 ```
+
+Jika SSID tidak ditemukan, password salah, adapter Wi-Fi bermasalah, atau
+speedtest gagal karena internet belum tersedia, aplikasi akan tetap menulis
+baris laporan dengan `status` = `GAGAL`, `Tipe Error`, dan detail di kolom
+`Keterangan`. Koneksi Wi-Fi dicoba ulang sesuai nilai `connection_retries`.
 
 ## Menjalankan Tes
 

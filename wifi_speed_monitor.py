@@ -42,8 +42,25 @@ HEADERS = [
     "upload_mbps",
     "ping_ms",
     "status",
+    "error_type",
     "error",
 ]
+
+ERROR_SSID_NOT_FOUND = "SSID_NOT_FOUND"
+ERROR_AUTH_FAILED = "AUTH_FAILED"
+ERROR_WIFI_ADAPTER = "WIFI_ADAPTER_ERROR"
+ERROR_CONNECT_FAILED = "CONNECT_FAILED"
+ERROR_NOT_CONNECTED = "NOT_CONNECTED"
+ERROR_NO_INTERNET = "NO_INTERNET"
+ERROR_SPEEDTEST_FAILED = "SPEEDTEST_FAILED"
+ERROR_REPORT_FAILED = "REPORT_FAILED"
+ERROR_UNKNOWN = "UNKNOWN"
+
+
+class WifiMonitorError(RuntimeError):
+    def __init__(self, error_type: str, message: str) -> None:
+        super().__init__(message)
+        self.error_type = error_type
 
 
 @dataclass(frozen=True)
@@ -75,9 +92,30 @@ def setup() -> None:
         encoding="utf-8",
     )
 
-    if not CSV_FILE.exists():
+    if CSV_FILE.exists():
+        migrate_csv_headers()
+    else:
         with CSV_FILE.open("w", newline="", encoding="utf-8-sig") as f:
             csv.DictWriter(f, fieldnames=HEADERS).writeheader()
+
+
+def migrate_csv_headers() -> None:
+    with CSV_FILE.open(newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        old_headers = reader.fieldnames or []
+
+    if old_headers == HEADERS:
+        return
+
+    normalized = []
+    for row in rows:
+        normalized.append({header: row.get(header, "") for header in HEADERS})
+
+    with CSV_FILE.open("w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=HEADERS)
+        writer.writeheader()
+        writer.writerows(normalized)
 
 
 def run(
@@ -117,22 +155,127 @@ def command_exists(name: str) -> bool:
     return shutil.which(name) is not None
 
 
-def connect_wifi(profile: WifiProfile, settle_seconds: int) -> None:
+def connect_wifi(profile: WifiProfile, settle_seconds: int, retries: int = 2) -> None:
     system = platform.system().lower()
     logging.info("Menghubungkan ke SSID %s di %s", profile.ssid, system)
 
-    if system == "windows":
-        connect_wifi_windows(profile)
-    elif system == "darwin":
-        connect_wifi_macos(profile)
-    elif system == "linux":
-        connect_wifi_linux(profile)
-    else:
-        raise RuntimeError(f"OS belum didukung: {platform.system()}")
+    available = available_wifi_ssids()
+    if available is not None and profile.ssid not in available:
+        raise WifiMonitorError(ERROR_SSID_NOT_FOUND, f"SSID '{profile.ssid}' tidak ditemukan di daftar Wi-Fi sekitar.")
 
-    time.sleep(settle_seconds)
-    if not is_connected_to(profile.ssid):
-        raise RuntimeError(f"Komputer belum tersambung ke {profile.ssid}.")
+    attempts = max(1, retries + 1)
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            if system == "windows":
+                connect_wifi_windows(profile)
+            elif system == "darwin":
+                connect_wifi_macos(profile)
+            elif system == "linux":
+                connect_wifi_linux(profile)
+            else:
+                raise WifiMonitorError(ERROR_UNKNOWN, f"OS belum didukung: {platform.system()}")
+
+            time.sleep(settle_seconds)
+            if is_connected_to(profile.ssid):
+                return
+
+            raise WifiMonitorError(ERROR_NOT_CONNECTED, f"Komputer belum tersambung ke {profile.ssid}.")
+        except Exception as exc:
+            last_error = exc
+            logging.warning("Percobaan koneksi %s/%s ke %s gagal: %s", attempt, attempts, profile.ssid, exc)
+            if attempt < attempts:
+                time.sleep(min(10, max(2, settle_seconds // 2)))
+
+    error_type = classify_wifi_error(last_error)
+    message = friendly_wifi_error(profile.ssid, error_type, str(last_error or "Koneksi Wi-Fi gagal."))
+    raise WifiMonitorError(error_type, message)
+
+
+def available_wifi_ssids() -> set[str] | None:
+    system = platform.system().lower()
+    try:
+        if system == "windows":
+            result = run(["netsh", "wlan", "show", "networks"], timeout=45)
+            if result.returncode != 0:
+                return None
+            ssids = set()
+            for line in result.stdout.splitlines():
+                if line.strip().lower().startswith("ssid") and ":" in line:
+                    ssid = line.split(":", 1)[1].strip()
+                    if ssid:
+                        ssids.add(ssid)
+            return ssids
+
+        if system == "darwin":
+            airport = Path("/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport")
+            if not airport.exists():
+                return None
+            result = run([str(airport), "-s"], timeout=45)
+            if result.returncode != 0:
+                return None
+            ssids = set()
+            for line in result.stdout.splitlines()[1:]:
+                text = line.strip()
+                if not text:
+                    continue
+                ssid = text.rsplit(maxsplit=6)[0].strip()
+                if ssid:
+                    ssids.add(ssid)
+            return ssids
+
+        if system == "linux":
+            if not command_exists("nmcli"):
+                return None
+            result = run(["nmcli", "-t", "-f", "SSID", "dev", "wifi", "list"], timeout=45)
+            if result.returncode != 0:
+                return None
+            return {line.replace("\\:", ":").strip() for line in result.stdout.splitlines() if line.strip()}
+    except Exception:
+        logging.exception("Gagal memindai daftar SSID.")
+        return None
+
+    return None
+
+
+def classify_wifi_error(exc: Exception | None) -> str:
+    if isinstance(exc, WifiMonitorError):
+        return exc.error_type
+
+    text = str(exc or "").lower()
+    auth_markers = [
+        "password",
+        "authentication",
+        "auth",
+        "invalid key",
+        "incorrect",
+        "not authorized",
+        "could not be joined",
+        "secrets were required",
+        "no secrets",
+        "802-11-wireless-security",
+    ]
+    adapter_markers = ["no wireless interface", "wi-fi power", "wifi power", "radio", "adapter", "device not found"]
+
+    if any(marker in text for marker in auth_markers):
+        return ERROR_AUTH_FAILED
+    if any(marker in text for marker in adapter_markers):
+        return ERROR_WIFI_ADAPTER
+    if "not connected" in text or "belum tersambung" in text:
+        return ERROR_NOT_CONNECTED
+    return ERROR_CONNECT_FAILED
+
+
+def friendly_wifi_error(ssid: str, error_type: str, detail: str) -> str:
+    messages = {
+        ERROR_SSID_NOT_FOUND: f"SSID '{ssid}' tidak ditemukan. Pastikan Wi-Fi aktif dan SSID berada dalam jangkauan.",
+        ERROR_AUTH_FAILED: f"Gagal login ke '{ssid}'. Kemungkinan password salah atau keamanan Wi-Fi tidak cocok.",
+        ERROR_WIFI_ADAPTER: "Adapter Wi-Fi bermasalah atau sedang nonaktif.",
+        ERROR_NOT_CONNECTED: f"Komputer belum tersambung ke '{ssid}' setelah percobaan koneksi.",
+        ERROR_CONNECT_FAILED: f"Gagal menghubungkan ke '{ssid}'.",
+    }
+    base = messages.get(error_type, f"Gagal menghubungkan ke '{ssid}'.")
+    return f"{base} Detail: {detail}".strip()
 
 
 def connect_wifi_windows(profile: WifiProfile) -> None:
@@ -245,7 +388,9 @@ def perform_speedtest() -> dict[str, float]:
         env=speedtest_env(),
     )
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+        message = result.stderr.strip() or result.stdout.strip()
+        error_type = ERROR_NO_INTERNET if "urlopen error" in message.lower() else ERROR_SPEEDTEST_FAILED
+        raise WifiMonitorError(error_type, message)
 
     data = json.loads(result.stdout)
     return {
@@ -270,7 +415,7 @@ def speedtest_env() -> dict[str, str]:
 
 def append_csv(row: dict[str, Any]) -> None:
     with CSV_FILE.open("a", newline="", encoding="utf-8-sig") as f:
-        csv.DictWriter(f, fieldnames=HEADERS).writerow(row)
+        csv.DictWriter(f, fieldnames=HEADERS).writerow({header: row.get(header, "") for header in HEADERS})
 
 
 def read_rows() -> list[dict[str, str]]:
@@ -324,6 +469,7 @@ def write_excel(rows: list[dict[str, str]], month_key: str) -> Path:
         "Upload (Mbps)",
         "Ping (ms)",
         "Status",
+        "Tipe Error",
         "Keterangan",
     ])
 
@@ -338,6 +484,7 @@ def write_excel(rows: list[dict[str, str]], month_key: str) -> Path:
             safe_float(row["upload_mbps"]),
             safe_float(row["ping_ms"]),
             row["status"],
+            row.get("error_type", ""),
             row["error"],
         ])
 
@@ -346,21 +493,21 @@ def write_excel(rows: list[dict[str, str]], month_key: str) -> Path:
         cell.font = Font(bold=True)
         cell.fill = fill
         cell.alignment = Alignment(horizontal="center")
-    for cell in ws["J"]:
+    for cell in ws["K"]:
         cell.alignment = Alignment(vertical="top", wrap_text=True)
 
-    widths = [13, 12, 11, 24, 23, 18, 17, 12, 12, 50]
+    widths = [13, 12, 11, 24, 23, 18, 17, 12, 12, 18, 50]
     for index, width in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(index)].width = width
 
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
-    ws["L1"] = "Buka Grafik"
-    ws["L1"].hyperlink = "#'Grafik'!A1"
-    ws["L1"].font = Font(bold=True, color="FFFFFF")
-    ws["L1"].fill = PatternFill("solid", fgColor="4472C4")
-    ws["L1"].alignment = Alignment(horizontal="center")
-    ws.column_dimensions["L"].width = 16
+    ws["M1"] = "Buka Grafik"
+    ws["M1"].hyperlink = "#'Grafik'!A1"
+    ws["M1"].font = Font(bold=True, color="FFFFFF")
+    ws["M1"].fill = PatternFill("solid", fgColor="4472C4")
+    ws["M1"].alignment = Alignment(horizontal="center")
+    ws.column_dimensions["M"].width = 16
 
     write_graph_sheet(wb, selected)
     wb.save(output)
@@ -542,7 +689,7 @@ def write_daily_pdf(rows: list[dict[str, str]], date_key: str) -> Path:
 
     table_data = [[
         "Tanggal", "Hari", "Waktu", "Komputer", "Wi-Fi",
-        "Download", "Upload", "Ping", "Status", "Keterangan"
+        "Download", "Upload", "Ping", "Status", "Tipe Error", "Keterangan"
     ]]
     for row in selected:
         table_data.append([
@@ -555,6 +702,7 @@ def write_daily_pdf(rows: list[dict[str, str]], date_key: str) -> Path:
             f'{row["upload_mbps"]} Mbps' if row["upload_mbps"] else "-",
             f'{row["ping_ms"]} ms' if row["ping_ms"] else "-",
             row["status"],
+            row.get("error_type", "-") or "-",
             Paragraph(row["error"] or "-", cell_style),
         ])
 
@@ -563,7 +711,7 @@ def write_daily_pdf(rows: list[dict[str, str]], date_key: str) -> Path:
         repeatRows=1,
         colWidths=[
             25 * mm, 22 * mm, 18 * mm, 42 * mm, 40 * mm,
-            29 * mm, 29 * mm, 22 * mm, 18 * mm, 129 * mm,
+            27 * mm, 27 * mm, 20 * mm, 18 * mm, 28 * mm, 103 * mm,
         ],
     )
     table.setStyle(TableStyle([
@@ -600,10 +748,11 @@ def shutdown_computer(delay_seconds: int = 30) -> None:
         raise RuntimeError(f"Shutdown belum didukung untuk OS: {platform.system()}")
 
 
-def run_monitor(config: dict[str, Any], final: bool = False) -> int:
+def run_monitor(config: dict[str, Any], final: bool = False, result_callback: Any | None = None) -> int:
     computer_name = config.get("computer_name") or platform.node() or "Komputer"
     settle_seconds = int(config.get("settle_seconds", 20))
     gap_seconds = int(config.get("gap_between_tests_seconds", 20))
+    connection_retries = int(config.get("connection_retries", 2))
     all_tests_ok = True
 
     for index, item in enumerate(config["wifi_profiles"]):
@@ -618,11 +767,12 @@ def run_monitor(config: dict[str, Any], final: bool = False) -> int:
             "upload_mbps": "",
             "ping_ms": "",
             "status": "GAGAL",
+            "error_type": "",
             "error": "",
         }
 
         try:
-            connect_wifi(profile, settle_seconds)
+            connect_wifi(profile, settle_seconds, connection_retries)
             result = perform_speedtest()
             row.update(result)
             row["status"] = "OK"
@@ -635,10 +785,13 @@ def run_monitor(config: dict[str, Any], final: bool = False) -> int:
             )
         except Exception as exc:
             all_tests_ok = False
+            row["error_type"] = getattr(exc, "error_type", ERROR_UNKNOWN)
             row["error"] = str(exc)
             logging.exception("Pengujian gagal untuk %s", profile.label)
 
         append_csv(row)
+        if result_callback is not None:
+            result_callback(dict(row))
 
         if index < len(config["wifi_profiles"]) - 1:
             time.sleep(gap_seconds)

@@ -31,6 +31,7 @@ class WifiMonitorApp(tk.Tk):
         self.computer_name = tk.StringVar(value=platform.node() or "Komputer")
         self.settle_seconds = tk.IntVar(value=20)
         self.gap_seconds = tk.IntVar(value=20)
+        self.connection_retries = tk.IntVar(value=2)
         self.shutdown_after_final = tk.BooleanVar(value=False)
         self.shutdown_delay = tk.IntVar(value=30)
         self.schedule_enabled = tk.BooleanVar(value=True)
@@ -69,8 +70,13 @@ class WifiMonitorApp(tk.Tk):
             settings,
             text="Shutdown setelah run final berhasil",
             variable=self.shutdown_after_final,
-        ).grid(row=3, column=0, sticky="w", padx=10, pady=8)
+        ).grid(row=4, column=0, sticky="w", padx=10, pady=8)
         ttk.Spinbox(settings, from_=30, to=3600, textvariable=self.shutdown_delay, width=8).grid(
+            row=4, column=1, sticky="w", padx=10, pady=8
+        )
+
+        ttk.Label(settings, text="Retry koneksi").grid(row=3, column=0, sticky="w", padx=10, pady=8)
+        ttk.Spinbox(settings, from_=0, to=5, textvariable=self.connection_retries, width=8).grid(
             row=3, column=1, sticky="w", padx=10, pady=8
         )
 
@@ -123,8 +129,9 @@ class WifiMonitorApp(tk.Tk):
 
         header = ttk.Frame(profiles)
         header.pack(fill=tk.X, padx=10, pady=(8, 2))
-        for index, text in enumerate(("SSID", "Password", "Label laporan")):
+        for index, text in enumerate(("SSID", "Password", "", "Label laporan")):
             ttk.Label(header, text=text).grid(row=0, column=index, sticky="w", padx=4)
+        for index in (0, 1, 3):
             header.columnconfigure(index, weight=1)
 
         self.profile_list = ttk.Frame(profiles)
@@ -153,6 +160,7 @@ class WifiMonitorApp(tk.Tk):
         self.computer_name.set(config.get("computer_name") or self.computer_name.get())
         self.settle_seconds.set(int(config.get("settle_seconds", 20)))
         self.gap_seconds.set(int(config.get("gap_between_tests_seconds", 20)))
+        self.connection_retries.set(int(config.get("connection_retries", 2)))
         self.shutdown_after_final.set(bool(config.get("shutdown_after_final", False)))
         self.shutdown_delay.set(int(config.get("shutdown_delay_seconds", 30)))
         schedule = config.get("schedule") or {}
@@ -177,18 +185,30 @@ class WifiMonitorApp(tk.Tk):
         ssid = tk.StringVar(value=(data or {}).get("ssid", ""))
         password = tk.StringVar(value=(data or {}).get("password", ""))
         label = tk.StringVar(value=(data or {}).get("label", ""))
+        password_visible = tk.BooleanVar(value=False)
 
         ttk.Entry(row_frame, textvariable=ssid).grid(row=0, column=0, sticky="ew", padx=4)
-        ttk.Entry(row_frame, textvariable=password, show="*").grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Entry(row_frame, textvariable=label).grid(row=0, column=2, sticky="ew", padx=4)
+        password_entry = ttk.Entry(row_frame, textvariable=password, show="*")
+        password_entry.grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(
+            row_frame,
+            text="👁",
+            width=3,
+            command=lambda: self._toggle_password(password_entry, password_visible),
+        ).grid(row=0, column=2, padx=(0, 4))
+        ttk.Entry(row_frame, textvariable=label).grid(row=0, column=3, sticky="ew", padx=4)
         ttk.Button(row_frame, text="Hapus", command=lambda: self._remove_profile(row_frame)).grid(
-            row=0, column=3, padx=(8, 0)
+            row=0, column=4, padx=(8, 0)
         )
 
-        for index in range(3):
+        for index in (0, 1, 3):
             row_frame.columnconfigure(index, weight=1)
 
         self.profile_rows.append({"frame": row_frame, "ssid": ssid, "password": password, "label": label})
+
+    def _toggle_password(self, entry: ttk.Entry, visible: tk.BooleanVar) -> None:
+        visible.set(not visible.get())
+        entry.configure(show="" if visible.get() else "*")
 
     def _remove_profile(self, frame: ttk.Frame) -> None:
         self.profile_rows = [row for row in self.profile_rows if row["frame"] is not frame]
@@ -216,6 +236,7 @@ class WifiMonitorApp(tk.Tk):
             "computer_name": self.computer_name.get().strip() or platform.node() or "Komputer",
             "settle_seconds": int(self.settle_seconds.get()),
             "gap_between_tests_seconds": int(self.gap_seconds.get()),
+            "connection_retries": int(self.connection_retries.get()),
             "shutdown_after_final": bool(self.shutdown_after_final.get()),
             "shutdown_delay_seconds": int(self.shutdown_delay.get()),
             "schedule": self._collect_schedule(),
@@ -352,7 +373,7 @@ class WifiMonitorApp(tk.Tk):
         try:
             setup()
             config = load_config(CONFIG_FILE)
-            code = run_monitor(config, final=final)
+            code = run_monitor(config, final=final, result_callback=self._queue_test_result)
             if code == 0:
                 self.status_queue.put("Tes selesai. Laporan tersimpan di folder reports.")
             else:
@@ -361,6 +382,17 @@ class WifiMonitorApp(tk.Tk):
             self.status_queue.put(f"Tes gagal: {exc}")
         finally:
             self.status_queue.put("__DONE__")
+
+    def _queue_test_result(self, row: dict[str, Any]) -> None:
+        if row.get("status") == "OK":
+            self.status_queue.put(
+                f"{row['wifi']}: OK - Download {row['download_mbps']} Mbps, "
+                f"Upload {row['upload_mbps']} Mbps, Ping {row['ping_ms']} ms"
+            )
+        else:
+            self.status_queue.put(
+                f"{row['wifi']}: GAGAL [{row.get('error_type') or 'UNKNOWN'}] {row.get('error') or ''}"
+            )
 
     def _poll_status(self) -> None:
         while not self.status_queue.empty():

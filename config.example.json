@@ -2,6 +2,7 @@
   "computer_name": "Komputer 1",
   "settle_seconds": 20,
   "gap_between_tests_seconds": 20,
+  "connection_retries": 2,
   "shutdown_after_final": false,
   "shutdown_delay_seconds": 30,
   "schedule": {
