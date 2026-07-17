@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import logging
+import os
 import platform
 import shutil
 import subprocess
@@ -76,13 +77,18 @@ def setup() -> None:
             csv.DictWriter(f, fieldnames=HEADERS).writeheader()
 
 
-def run(args: list[str], timeout: int = 240) -> subprocess.CompletedProcess[str]:
+def run(
+    args: list[str],
+    timeout: int = 240,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         args,
         capture_output=True,
         text=True,
         timeout=timeout,
         check=False,
+        env=env,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
 
@@ -230,7 +236,11 @@ def is_connected_to(ssid: str) -> bool:
 
 
 def perform_speedtest() -> dict[str, float]:
-    result = run([sys.executable, "-m", "speedtest", "--json", "--secure"], timeout=240)
+    result = run(
+        [sys.executable, "-m", "speedtest", "--json", "--secure"],
+        timeout=240,
+        env=speedtest_env(),
+    )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
 
@@ -240,6 +250,19 @@ def perform_speedtest() -> dict[str, float]:
         "upload_mbps": round(float(data["upload"]) / 1_000_000, 2),
         "ping_ms": round(float(data.get("ping", 0)), 2),
     }
+
+
+def speedtest_env() -> dict[str, str]:
+    env = os.environ.copy()
+    try:
+        import certifi
+    except ImportError:
+        return env
+
+    ca_bundle = certifi.where()
+    env.setdefault("SSL_CERT_FILE", ca_bundle)
+    env.setdefault("REQUESTS_CA_BUNDLE", ca_bundle)
+    return env
 
 
 def append_csv(row: dict[str, Any]) -> None:

@@ -60,6 +60,16 @@ sudo apt install python3-tk
 Di macOS, Python dari python.org biasanya sudah menyertakan Tkinter. Beberapa
 instalasi Homebrew mungkin perlu paket Tk terpisah atau Python dari python.org.
 
+Jika speedtest di macOS gagal dengan error `CERTIFICATE_VERIFY_FAILED`, update
+dependency lalu jalankan ulang aplikasi:
+
+```bash
+./.venv/bin/python -m pip install -r requirements.txt
+```
+
+Aplikasi memakai bundle sertifikat dari `certifi` untuk membantu Python
+mengenali sertifikat HTTPS yang dipakai `speedtest-cli`.
+
 ## Konfigurasi
 
 Cara termudah adalah membuka GUI:
