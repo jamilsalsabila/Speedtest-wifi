@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Any
 
-from install_schedule import generate_times, install_for_current_os
+from install_schedule import generate_times, install_for_current_os, uninstall_for_current_os
 from wifi_speed_monitor import CONFIG_FILE, load_config, run_monitor, setup
 
 
@@ -77,6 +77,9 @@ class WifiMonitorApp(tk.Tk):
             row=0, column=0, sticky="w", padx=10, pady=8
         )
         ttk.Button(schedule, text="Pasang Jadwal", command=self._install_schedule).grid(
+            row=0, column=2, sticky="e", padx=10, pady=8
+        )
+        ttk.Button(schedule, text="Hapus Jadwal", command=self._delete_schedule).grid(
             row=0, column=3, sticky="e", padx=10, pady=8
         )
 
@@ -298,6 +301,24 @@ class WifiMonitorApp(tk.Tk):
             self.status_queue.put("Jadwal berhasil dipasang.")
         except Exception as exc:
             self.status_queue.put(f"Gagal memasang jadwal: {exc}")
+        finally:
+            self.status_queue.put("__DONE__")
+
+    def _delete_schedule(self) -> None:
+        if not messagebox.askyesno("Hapus Jadwal", "Hapus jadwal Wi-Fi Speed Monitor dari scheduler OS ini?"):
+            return
+
+        self._set_buttons_state(tk.DISABLED)
+        self._log("Menghapus jadwal...")
+        thread = threading.Thread(target=self._delete_schedule_worker, daemon=True)
+        thread.start()
+
+    def _delete_schedule_worker(self) -> None:
+        try:
+            uninstall_for_current_os()
+            self.status_queue.put("Jadwal berhasil dihapus.")
+        except Exception as exc:
+            self.status_queue.put(f"Gagal menghapus jadwal: {exc}")
         finally:
             self.status_queue.put("__DONE__")
 

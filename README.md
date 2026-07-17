@@ -130,6 +130,13 @@ Klik `Pasang Jadwal` setelah konfigurasi disimpan. Contoh: mulai `08:30`,
 selesai `20:30`, setiap `60` menit akan membuat jadwal 08:30, 09:30, 10:30,
 dan seterusnya sampai 20:30.
 
+Jika jadwal sudah tidak dibutuhkan, klik `Hapus Jadwal` di GUI. Aplikasi hanya
+menghapus jadwal milik Wi-Fi Speed Monitor:
+
+- Windows: task bernama `WiFi Speed Monitor`.
+- Linux: baris cron dengan marker `# wifi-speed-monitor`.
+- macOS: LaunchAgent `local.wifi-speed-monitor-*.plist`.
+
 Via CLI, `install_schedule.py` otomatis membaca jadwal dari `config.json`:
 
 ```bash
@@ -146,6 +153,12 @@ Argumen manual tetap tersedia:
 
 ```bash
 python install_schedule.py --times 08:00 12:00 18:00 --final-time 21:00
+```
+
+Hapus jadwal via CLI:
+
+```bash
+python install_schedule.py --delete
 ```
 
 Catatan izin:

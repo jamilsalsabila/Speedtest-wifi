@@ -13,6 +13,10 @@ BASE_DIR = Path(__file__).resolve().parent
 PYTHON = Path(sys.executable).resolve()
 MONITOR = BASE_DIR / "wifi_speed_monitor.py"
 CONFIG_FILE = BASE_DIR / "config.json"
+WINDOWS_TASK_NAMES = ["WiFi Speed Monitor", "WiFi Speed Monitor Final"]
+WINDOWS_TASK_NAMES.extend(f"WiFi Speed Monitor {index:02d}" for index in range(1, 49))
+MACOS_LAUNCH_AGENT_LABELS = [f"wifi-speed-monitor-{index}" for index in range(1, 49)]
+MACOS_LAUNCH_AGENT_LABELS.append("wifi-speed-monitor-final")
 
 
 def run(args: list[str], input_text: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -20,10 +24,7 @@ def run(args: list[str], input_text: str | None = None) -> subprocess.CompletedP
 
 
 def install_windows(times: list[str], final_time: str | None) -> None:
-    task_names = ["WiFi Speed Monitor", "WiFi Speed Monitor Final"]
-    task_names.extend(f"WiFi Speed Monitor {index:02d}" for index in range(1, 49))
-    for task_name in task_names:
-        run(["schtasks", "/Delete", "/TN", task_name, "/F"])
+    uninstall_windows()
 
     for index, time_value in enumerate(times, start=1):
         task_name = "WiFi Speed Monitor" if len(times) == 1 else f"WiFi Speed Monitor {index:02d}"
@@ -67,13 +68,7 @@ def install_macos(times: list[str], final_time: str | None) -> None:
     launch_agents = Path.home() / "Library" / "LaunchAgents"
     launch_agents.mkdir(parents=True, exist_ok=True)
 
-    for index in range(1, 49):
-        plist = launch_agents / f"local.wifi-speed-monitor-{index}.plist"
-        run(["launchctl", "unload", str(plist)])
-        plist.unlink(missing_ok=True)
-    final_plist = launch_agents / "local.wifi-speed-monitor-final.plist"
-    run(["launchctl", "unload", str(final_plist)])
-    final_plist.unlink(missing_ok=True)
+    uninstall_macos()
 
     entries = [(f"wifi-speed-monitor-{i}", time_value, False) for i, time_value in enumerate(times, start=1)]
     if final_time:
@@ -143,6 +138,45 @@ def install_linux(times: list[str], final_time: str | None) -> None:
         )
 
     result = run(["crontab", "-"], input_text="\n".join(lines) + "\n")
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+
+
+def uninstall_windows() -> None:
+    errors = []
+    for task_name in WINDOWS_TASK_NAMES:
+        result = run(["schtasks", "/Delete", "/TN", task_name, "/F"])
+        output = result.stderr.strip() or result.stdout.strip()
+        if result.returncode != 0 and output and "cannot find" not in output.lower():
+            errors.append(output)
+    if errors:
+        raise RuntimeError("\n".join(errors))
+
+
+def uninstall_macos() -> None:
+    launch_agents = Path.home() / "Library" / "LaunchAgents"
+    errors = []
+    for label in MACOS_LAUNCH_AGENT_LABELS:
+        plist = launch_agents / f"local.{label}.plist"
+        unload = run(["launchctl", "unload", str(plist)])
+        output = unload.stderr.strip() or unload.stdout.strip()
+        if unload.returncode != 0 and plist.exists() and output:
+            errors.append(output)
+        plist.unlink(missing_ok=True)
+    if errors:
+        raise RuntimeError("\n".join(errors))
+
+
+def uninstall_linux() -> None:
+    current = run(["crontab", "-l"])
+    if current.returncode != 0:
+        return
+
+    lines = [line for line in current.stdout.splitlines() if "# wifi-speed-monitor" not in line]
+    if lines:
+        result = run(["crontab", "-"], input_text="\n".join(lines) + "\n")
+    else:
+        result = run(["crontab", "-r"])
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
 
@@ -225,12 +259,31 @@ def install_for_current_os(times: list[str], final_time: str | None) -> None:
         raise RuntimeError(f"OS belum didukung: {platform.system()}")
 
 
+def uninstall_for_current_os() -> None:
+    system = platform.system().lower()
+
+    if system == "windows":
+        uninstall_windows()
+    elif system == "darwin":
+        uninstall_macos()
+    elif system == "linux":
+        uninstall_linux()
+    else:
+        raise RuntimeError(f"OS belum didukung: {platform.system()}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Pasang jadwal Wi-Fi Speed Monitor.")
     parser.add_argument("--times", nargs="*", default=None, help="Jam tes reguler, contoh: 08:30 12:30")
     parser.add_argument("--final-time", default=None, help="Jam final dengan argumen --final, contoh: 21:00")
     parser.add_argument("--from-config", action="store_true", help="Ambil jadwal dari config.json.")
+    parser.add_argument("--delete", action="store_true", help="Hapus jadwal Wi-Fi Speed Monitor dari scheduler OS.")
     args = parser.parse_args()
+
+    if args.delete:
+        uninstall_for_current_os()
+        print("Jadwal berhasil dihapus.")
+        return 0
 
     if args.from_config or args.times is None:
         times, final_time = load_schedule_from_config()
