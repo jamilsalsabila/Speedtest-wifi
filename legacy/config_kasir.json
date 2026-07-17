@@ -1,0 +1,19 @@
+{
+  "computer_name": "Komputer Kasir",
+  "role": "kasir",
+  "settle_seconds": 20,
+  "gap_between_tests_seconds": 30,
+  "shutdown_delay_seconds": 30,
+  "wifi_profiles": [
+    {
+      "ssid": "thisiscotch",
+      "password": "ISI_PASSWORD_WIFI",
+      "label": "thisiscotch"
+    },
+    {
+      "ssid": "COTCH",
+      "password": "ISI_PASSWORD_WIFI",
+      "label": "COTCH"
+    }
+  ]
+}
