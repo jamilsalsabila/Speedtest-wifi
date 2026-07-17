@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
-from openpyxl.chart import LineChart, Reference
+from openpyxl.chart import Reference, ScatterChart, Series
 from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -450,37 +450,73 @@ def write_metric_matrix(
             ),
         )
 
-        chart_data_col = end_column + 2
-        chart_label_col = chart_data_col
-        chart_value_col = chart_data_col + 1
-        ws.cell(header_row, chart_label_col, "Label")
-        ws.cell(header_row, chart_value_col, title)
-        chart_row = header_row + 1
+        chart_col = end_column + 2
+        chart_row_anchor = start_row
         for date_text in dates:
-            for time_label in times:
-                values = buckets.get((date_text, time_label), [])
-                if not values:
-                    continue
-                ws.cell(chart_row, chart_label_col, f"{date_text} {day_name(date_text)} {time_label}")
-                ws.cell(chart_row, chart_value_col, round(sum(values) / len(values), 2))
-                chart_row += 1
+            chart_end_row = write_daily_scatter_chart_data(
+                ws,
+                buckets,
+                times,
+                title,
+                date_text,
+                chart_col,
+                chart_row_anchor,
+            )
+            chart_row_anchor = chart_end_row + 2
 
-        chart = LineChart()
-        chart.title = title
+    return max(end_row, chart_row_anchor - 2 if dates and times else end_row)
+
+
+def write_daily_scatter_chart_data(
+    ws: Any,
+    buckets: dict[tuple[str, str], list[float]],
+    times: list[str],
+    title: str,
+    date_text: str,
+    start_col: int,
+    start_row: int,
+) -> int:
+    label = f"{day_name(date_text)}, {date_text}"
+    ws.cell(start_row, start_col, label).font = Font(bold=True)
+    ws.cell(start_row + 1, start_col, "Jam")
+    ws.cell(start_row + 1, start_col + 1, "Index")
+    ws.cell(start_row + 1, start_col + 2, title)
+
+    data_row = start_row + 2
+    point_index = 1
+    for time_label in times:
+        values = buckets.get((date_text, time_label), [])
+        if not values:
+            continue
+        ws.cell(data_row, start_col, time_label)
+        ws.cell(data_row, start_col + 1, point_index)
+        ws.cell(data_row, start_col + 2, round(sum(values) / len(values), 2))
+        data_row += 1
+        point_index += 1
+
+    if data_row > start_row + 2:
+        x_values = Reference(ws, min_col=start_col + 1, min_row=start_row + 2, max_row=data_row - 1)
+        y_values = Reference(ws, min_col=start_col + 2, min_row=start_row + 2, max_row=data_row - 1)
+        series = Series(y_values, x_values, title=title)
+        series.marker.symbol = "circle"
+        series.marker.size = 6
+        series.graphicalProperties.line.solidFill = "4472C4"
+
+        chart = ScatterChart()
+        chart.title = label
         chart.y_axis.title = title
-        chart.x_axis.title = "Tanggal / Hari / Jam"
-        if chart_row > header_row + 1:
-            data = Reference(ws, min_col=chart_value_col, min_row=header_row, max_row=chart_row - 1)
-            categories = Reference(ws, min_col=chart_label_col, min_row=header_row + 1, max_row=chart_row - 1)
-            chart.add_data(data, titles_from_data=True)
-            chart.set_categories(categories)
+        chart.x_axis.title = "Jam"
+        chart.scatterStyle = "lineMarker"
+        chart.legend = None
         chart.height = 7
         chart.width = 18
-        ws.add_chart(chart, f"{get_column_letter(chart_value_col + 2)}{start_row}")
-        ws.column_dimensions[get_column_letter(chart_label_col)].width = 24
-        ws.column_dimensions[get_column_letter(chart_value_col)].width = 16
+        chart.series.append(series)
+        ws.add_chart(chart, f"{get_column_letter(start_col + 4)}{start_row}")
 
-    return end_row
+    ws.column_dimensions[get_column_letter(start_col)].width = 11
+    ws.column_dimensions[get_column_letter(start_col + 1)].width = 8
+    ws.column_dimensions[get_column_letter(start_col + 2)].width = 16
+    return max(data_row, start_row + 16)
 
 
 def write_daily_pdf(rows: list[dict[str, str]], date_key: str) -> Path:
