@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-PYTHON = Path(sys.executable).resolve()
 MONITOR = BASE_DIR / "wifi_speed_monitor.py"
 CONFIG_FILE = BASE_DIR / "config.json"
 WINDOWS_TASK_NAMES = ["WiFi Speed Monitor", "WiFi Speed Monitor Final"]
@@ -23,12 +22,24 @@ def run(args: list[str], input_text: str | None = None) -> subprocess.CompletedP
     return subprocess.run(args, input=input_text, capture_output=True, text=True, check=False)
 
 
+def scheduler_python() -> Path:
+    if platform.system().lower() == "windows":
+        venv_python = BASE_DIR / ".venv" / "Scripts" / "python.exe"
+    else:
+        venv_python = BASE_DIR / ".venv" / "bin" / "python"
+
+    if venv_python.exists():
+        return venv_python
+    return Path(sys.executable).resolve()
+
+
 def install_windows(times: list[str], final_time: str | None) -> None:
     uninstall_windows()
+    python_exe = scheduler_python()
 
     for index, time_value in enumerate(times, start=1):
         task_name = "WiFi Speed Monitor" if len(times) == 1 else f"WiFi Speed Monitor {index:02d}"
-        command = f'"{PYTHON}" "{MONITOR}"'
+        command = f'"{python_exe}" "{MONITOR}"'
         result = run([
             "schtasks",
             "/Create",
@@ -46,7 +57,7 @@ def install_windows(times: list[str], final_time: str | None) -> None:
             raise RuntimeError(result.stderr.strip() or result.stdout.strip())
 
     if final_time:
-        command = f'"{PYTHON}" "{MONITOR}" --final'
+        command = f'"{python_exe}" "{MONITOR}" --final'
         result = run([
             "schtasks",
             "/Create",
@@ -67,6 +78,7 @@ def install_windows(times: list[str], final_time: str | None) -> None:
 def install_macos(times: list[str], final_time: str | None) -> None:
     launch_agents = Path.home() / "Library" / "LaunchAgents"
     launch_agents.mkdir(parents=True, exist_ok=True)
+    python_exe = scheduler_python()
 
     uninstall_macos()
 
@@ -77,7 +89,7 @@ def install_macos(times: list[str], final_time: str | None) -> None:
     for label, time_value, is_final in entries:
         hour, minute = parse_time(time_value)
         plist = launch_agents / f"local.{label}.plist"
-        args = [str(PYTHON), str(MONITOR)]
+        args = [str(python_exe), str(MONITOR)]
         if is_final:
             args.append("--final")
 
@@ -122,19 +134,20 @@ def install_linux(times: list[str], final_time: str | None) -> None:
     current = run(["crontab", "-l"])
     lines = [] if current.returncode != 0 else current.stdout.splitlines()
     lines = [line for line in lines if "# wifi-speed-monitor" not in line]
+    python_exe = scheduler_python()
 
     for time_value in times:
         hour, minute = parse_time(time_value)
         lines.append(
             f"{minute} {hour} * * * cd {shlex.quote(str(BASE_DIR))} && "
-            f"{shlex.quote(str(PYTHON))} {shlex.quote(str(MONITOR))} # wifi-speed-monitor"
+            f"{shlex.quote(str(python_exe))} {shlex.quote(str(MONITOR))} # wifi-speed-monitor"
         )
 
     if final_time:
         hour, minute = parse_time(final_time)
         lines.append(
             f"{minute} {hour} * * * cd {shlex.quote(str(BASE_DIR))} && "
-            f"{shlex.quote(str(PYTHON))} {shlex.quote(str(MONITOR))} --final # wifi-speed-monitor"
+            f"{shlex.quote(str(python_exe))} {shlex.quote(str(MONITOR))} --final # wifi-speed-monitor"
         )
 
     result = run(["crontab", "-"], input_text="\n".join(lines) + "\n")
@@ -404,7 +417,8 @@ def format_schedule_status(status: dict[str, object]) -> str:
     os_name = status.get("os", platform.system())
     return (
         f"{os_name}: {status.get('installed_count', 0)} jadwal ditemukan, "
-        f"{status.get('loaded_count', 0)} aktif. {preview}"
+        f"{status.get('loaded_count', 0)} aktif. {preview}. "
+        f"Python scheduler: {scheduler_python()}"
     )
 
 
