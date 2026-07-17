@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
-from openpyxl.chart import Reference, ScatterChart, Series
+from openpyxl.chart import LineChart, Reference
 from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -533,6 +533,8 @@ def write_graph_sheet(wb: Workbook, rows: list[dict[str, str]]) -> None:
     for title, key, higher_is_better in metrics:
         start_row = write_metric_matrix(ws, rows, dates, times, title, key, higher_is_better, start_row)
         start_row += 3
+    if dates and times:
+        start_row = write_daily_charts(ws, rows, dates, times, start_row + 1)
 
     ws.column_dimensions["A"].width = 24
     for column in range(2, len(times) + 2):
@@ -597,73 +599,106 @@ def write_metric_matrix(
             ),
         )
 
-        chart_col = end_column + 2
-        chart_row_anchor = start_row
-        for date_text in dates:
-            chart_end_row = write_daily_scatter_chart_data(
-                ws,
-                buckets,
-                times,
-                title,
-                date_text,
-                chart_col,
-                chart_row_anchor,
-            )
-            chart_row_anchor = chart_end_row + 2
-
-    return max(end_row, chart_row_anchor - 2 if dates and times else end_row)
+    return end_row
 
 
-def write_daily_scatter_chart_data(
+def write_daily_charts(
     ws: Any,
-    buckets: dict[tuple[str, str], list[float]],
+    rows: list[dict[str, str]],
+    dates: list[str],
     times: list[str],
-    title: str,
+    start_row: int,
+) -> int:
+    ws.cell(start_row, 1, "Plot Harian").font = Font(bold=True, size=12)
+    row_anchor = start_row + 2
+    for date_text in dates:
+        row_anchor = write_daily_chart_pair(ws, rows, date_text, times, row_anchor) + 3
+    return row_anchor
+
+
+def write_daily_chart_pair(
+    ws: Any,
+    rows: list[dict[str, str]],
     date_text: str,
-    start_col: int,
+    times: list[str],
     start_row: int,
 ) -> int:
     label = f"{day_name(date_text)}, {date_text}"
-    ws.cell(start_row, start_col, label).font = Font(bold=True)
-    ws.cell(start_row + 1, start_col, "Jam")
-    ws.cell(start_row + 1, start_col + 1, "Index")
-    ws.cell(start_row + 1, start_col + 2, title)
+    ws.cell(start_row, 1, label).font = Font(bold=True)
+    header_row = start_row + 1
+    headers = ["Jam", "Download (Mbps)", "Upload (Mbps)", "Ping (ms)"]
+    for column, header in enumerate(headers, start=1):
+        cell = ws.cell(header_row, column, header)
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="D9EAF7")
+        cell.alignment = Alignment(horizontal="center")
 
-    data_row = start_row + 2
-    point_index = 1
+    data_row = header_row + 1
     for time_label in times:
-        values = buckets.get((date_text, time_label), [])
-        if not values:
+        download = average_metric(rows, date_text, time_label, "download_mbps")
+        upload = average_metric(rows, date_text, time_label, "upload_mbps")
+        ping = average_metric(rows, date_text, time_label, "ping_ms")
+        if download is None and upload is None and ping is None:
             continue
-        ws.cell(data_row, start_col, time_label)
-        ws.cell(data_row, start_col + 1, point_index)
-        ws.cell(data_row, start_col + 2, round(sum(values) / len(values), 2))
+        ws.cell(data_row, 1, time_label)
+        ws.cell(data_row, 2, download)
+        ws.cell(data_row, 3, upload)
+        ws.cell(data_row, 4, ping)
         data_row += 1
-        point_index += 1
 
-    if data_row > start_row + 2:
-        x_values = Reference(ws, min_col=start_col + 1, min_row=start_row + 2, max_row=data_row - 1)
-        y_values = Reference(ws, min_col=start_col + 2, min_row=start_row + 2, max_row=data_row - 1)
-        series = Series(y_values, x_values, title=title)
+    if data_row > header_row + 1:
+        categories = Reference(ws, min_col=1, min_row=header_row + 1, max_row=data_row - 1)
+
+        speed_chart = LineChart()
+        speed_chart.title = f"Speed - {label}"
+        speed_chart.y_axis.title = "Speed (Mbps)"
+        speed_chart.x_axis.title = "Jam"
+        speed_chart.height = 7
+        speed_chart.width = 18
+        speed_data = Reference(ws, min_col=2, max_col=3, min_row=header_row, max_row=data_row - 1)
+        speed_chart.add_data(speed_data, titles_from_data=True)
+        speed_chart.set_categories(categories)
+        style_line_series(speed_chart, ["4472C4", "ED7D31"])
+        ws.add_chart(speed_chart, f"F{start_row}")
+
+        ping_chart = LineChart()
+        ping_chart.title = f"Ping - {label}"
+        ping_chart.y_axis.title = "Ping (ms)"
+        ping_chart.x_axis.title = "Jam"
+        ping_chart.height = 7
+        ping_chart.width = 18
+        ping_data = Reference(ws, min_col=4, min_row=header_row, max_row=data_row - 1)
+        ping_chart.add_data(ping_data, titles_from_data=True)
+        ping_chart.set_categories(categories)
+        style_line_series(ping_chart, ["70AD47"])
+        ws.add_chart(ping_chart, f"P{start_row}")
+
+    for column, width in enumerate([11, 18, 18, 12], start=1):
+        ws.column_dimensions[get_column_letter(column)].width = max(ws.column_dimensions[get_column_letter(column)].width or 0, width)
+    return max(data_row, start_row + 16)
+
+
+def average_metric(rows: list[dict[str, str]], date_text: str, time_label: str, metric_key: str) -> float | None:
+    values = [
+        value
+        for row in rows
+        if row.get("tanggal") == date_text and row.get("waktu", "")[:5] == time_label
+        for value in [safe_float(row.get(metric_key, ""))]
+        if value is not None
+    ]
+    if not values:
+        return None
+    return round(sum(values) / len(values), 2)
+
+
+def style_line_series(chart: LineChart, colors: list[str]) -> None:
+    for series, color in zip(chart.series, colors):
+        series.graphicalProperties.line.solidFill = color
+        series.graphicalProperties.line.width = 25000
         series.marker.symbol = "circle"
         series.marker.size = 6
-        series.graphicalProperties.line.solidFill = "4472C4"
-
-        chart = ScatterChart()
-        chart.title = label
-        chart.y_axis.title = title
-        chart.x_axis.title = "Jam"
-        chart.scatterStyle = "lineMarker"
-        chart.legend = None
-        chart.height = 7
-        chart.width = 18
-        chart.series.append(series)
-        ws.add_chart(chart, f"{get_column_letter(start_col + 4)}{start_row}")
-
-    ws.column_dimensions[get_column_letter(start_col)].width = 11
-    ws.column_dimensions[get_column_letter(start_col + 1)].width = 8
-    ws.column_dimensions[get_column_letter(start_col + 2)].width = 16
-    return max(data_row, start_row + 16)
+        series.marker.graphicalProperties.solidFill = color
+        series.marker.graphicalProperties.line.solidFill = color
 
 
 def write_daily_pdf(rows: list[dict[str, str]], date_key: str) -> Path:
