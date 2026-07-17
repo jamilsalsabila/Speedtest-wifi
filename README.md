@@ -140,6 +140,10 @@ Klik `Pasang Jadwal` setelah konfigurasi disimpan. Contoh: mulai `08:30`,
 selesai `20:30`, setiap `60` menit akan membuat jadwal 08:30, 09:30, 10:30,
 dan seterusnya sampai 20:30.
 
+Klik `Cek Jadwal` untuk memastikan scheduler OS sudah berisi jadwal aplikasi.
+Setelah `Pasang Jadwal`, aplikasi juga melakukan verifikasi otomatis dan
+menampilkan jumlah jadwal yang ditemukan.
+
 Jika jadwal sudah tidak dibutuhkan, klik `Hapus Jadwal` di GUI. Aplikasi hanya
 menghapus jadwal milik Wi-Fi Speed Monitor:
 
@@ -169,6 +173,12 @@ Hapus jadwal via CLI:
 
 ```bash
 python install_schedule.py --delete
+```
+
+Cek status jadwal via CLI:
+
+```bash
+python install_schedule.py --status
 ```
 
 Catatan izin:

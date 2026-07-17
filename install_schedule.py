@@ -112,8 +112,8 @@ def install_macos(times: list[str], final_time: str | None) -> None:
 """,
             encoding="utf-8",
         )
-        run(["launchctl", "unload", str(plist)])
-        result = run(["launchctl", "load", str(plist)])
+        unload_macos_launch_agent(label, plist)
+        result = load_macos_launch_agent(label, plist)
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or result.stdout.strip())
 
@@ -158,13 +158,55 @@ def uninstall_macos() -> None:
     errors = []
     for label in MACOS_LAUNCH_AGENT_LABELS:
         plist = launch_agents / f"local.{label}.plist"
-        unload = run(["launchctl", "unload", str(plist)])
+        unload = unload_macos_launch_agent(label, plist)
         output = unload.stderr.strip() or unload.stdout.strip()
-        if unload.returncode != 0 and plist.exists() and output:
+        if unload.returncode != 0 and plist.exists() and output and not is_missing_macos_service(output):
             errors.append(output)
         plist.unlink(missing_ok=True)
     if errors:
         raise RuntimeError("\n".join(errors))
+
+
+def is_missing_macos_service(output: str) -> bool:
+    normalized = output.lower()
+    return any(
+        text in normalized
+        for text in (
+            "could not find specified service",
+            "no such process",
+            "service is not loaded",
+            "no such file",
+        )
+    )
+
+
+def macos_gui_domain() -> str:
+    return f"gui/{os.getuid()}"
+
+
+def load_macos_launch_agent(label: str, plist: Path) -> subprocess.CompletedProcess[str]:
+    result = run(["launchctl", "bootstrap", macos_gui_domain(), str(plist)])
+    if result.returncode == 0:
+        return result
+
+    fallback = run(["launchctl", "load", str(plist)])
+    if fallback.returncode == 0:
+        return fallback
+
+    return result
+
+
+def unload_macos_launch_agent(label: str, plist: Path) -> subprocess.CompletedProcess[str]:
+    service_name = f"{macos_gui_domain()}/local.{label}"
+    result = run(["launchctl", "bootout", service_name])
+    if result.returncode == 0:
+        return result
+
+    fallback = run(["launchctl", "unload", str(plist)])
+    if fallback.returncode == 0:
+        return fallback
+
+    return result
 
 
 def uninstall_linux() -> None:
@@ -258,6 +300,20 @@ def install_for_current_os(times: list[str], final_time: str | None) -> None:
     else:
         raise RuntimeError(f"OS belum didukung: {platform.system()}")
 
+    verify_installed_schedule(len(times) + (1 if final_time else 0))
+
+
+def verify_installed_schedule(expected_count: int) -> None:
+    status = schedule_status_for_current_os()
+    installed_count = int(status["installed_count"])
+    loaded_count = int(status["loaded_count"])
+    if installed_count < expected_count or loaded_count < expected_count:
+        raise RuntimeError(
+            "Jadwal belum terverifikasi di scheduler OS. "
+            f"Target {expected_count}, ditemukan {installed_count}, aktif {loaded_count}. "
+            f"{format_schedule_status(status)}"
+        )
+
 
 def uninstall_for_current_os() -> None:
     system = platform.system().lower()
@@ -272,13 +328,98 @@ def uninstall_for_current_os() -> None:
         raise RuntimeError(f"OS belum didukung: {platform.system()}")
 
 
+def schedule_status_for_current_os() -> dict[str, object]:
+    system = platform.system().lower()
+
+    if system == "windows":
+        return windows_schedule_status()
+    if system == "darwin":
+        return macos_schedule_status()
+    if system == "linux":
+        return linux_schedule_status()
+    raise RuntimeError(f"OS belum didukung: {platform.system()}")
+
+
+def windows_schedule_status() -> dict[str, object]:
+    installed = []
+    for task_name in WINDOWS_TASK_NAMES:
+        result = run(["schtasks", "/Query", "/TN", task_name])
+        if result.returncode == 0:
+            installed.append(task_name)
+    return {
+        "os": "Windows",
+        "installed_count": len(installed),
+        "installed": installed,
+        "loaded_count": len(installed),
+        "loaded": installed,
+    }
+
+
+def macos_schedule_status() -> dict[str, object]:
+    launch_agents = Path.home() / "Library" / "LaunchAgents"
+    installed = [
+        f"local.{label}"
+        for label in MACOS_LAUNCH_AGENT_LABELS
+        if (launch_agents / f"local.{label}.plist").exists()
+    ]
+
+    loaded = []
+    for label in installed:
+        result = run(["launchctl", "print", f"{macos_gui_domain()}/{label}"])
+        if result.returncode == 0:
+            loaded.append(label)
+
+    return {
+        "os": "macOS",
+        "installed_count": len(installed),
+        "installed": installed,
+        "loaded_count": len(loaded),
+        "loaded": loaded,
+    }
+
+
+def linux_schedule_status() -> dict[str, object]:
+    current = run(["crontab", "-l"])
+    installed = []
+    if current.returncode == 0:
+        installed = [line for line in current.stdout.splitlines() if "# wifi-speed-monitor" in line]
+    return {
+        "os": "Linux",
+        "installed_count": len(installed),
+        "installed": installed,
+        "loaded_count": len(installed),
+        "loaded": installed,
+    }
+
+
+def format_schedule_status(status: dict[str, object]) -> str:
+    installed = list(status.get("installed", []))
+    loaded = list(status.get("loaded", []))
+    preview = ", ".join(str(item) for item in installed[:5])
+    if len(installed) > 5:
+        preview += f", ... ({len(installed)} total)"
+    if not preview:
+        preview = "belum ada jadwal"
+
+    os_name = status.get("os", platform.system())
+    return (
+        f"{os_name}: {status.get('installed_count', 0)} jadwal ditemukan, "
+        f"{status.get('loaded_count', 0)} aktif. {preview}"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Pasang jadwal Wi-Fi Speed Monitor.")
     parser.add_argument("--times", nargs="*", default=None, help="Jam tes reguler, contoh: 08:30 12:30")
     parser.add_argument("--final-time", default=None, help="Jam final dengan argumen --final, contoh: 21:00")
     parser.add_argument("--from-config", action="store_true", help="Ambil jadwal dari config.json.")
     parser.add_argument("--delete", action="store_true", help="Hapus jadwal Wi-Fi Speed Monitor dari scheduler OS.")
+    parser.add_argument("--status", action="store_true", help="Cek jadwal Wi-Fi Speed Monitor di scheduler OS.")
     args = parser.parse_args()
+
+    if args.status:
+        print(format_schedule_status(schedule_status_for_current_os()))
+        return 0
 
     if args.delete:
         uninstall_for_current_os()
