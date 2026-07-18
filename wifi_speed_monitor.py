@@ -322,9 +322,25 @@ def add_windows_profile(profile: WifiProfile) -> None:
     try:
         result = run(["netsh", "wlan", "add", "profile", f"filename={temp_path}", "user=current"], timeout=45)
         if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+            output = result.stderr.strip() or result.stdout.strip()
+            if is_windows_existing_profile_error(output):
+                logging.info("Profil Wi-Fi Windows sudah ada untuk %s; memakai profil yang tersedia.", profile.ssid)
+                return
+            raise RuntimeError(output)
     finally:
         Path(temp_path).unlink(missing_ok=True)
+
+
+def is_windows_existing_profile_error(output: str) -> bool:
+    text = output.lower()
+    markers = [
+        "already exists",
+        "group policy",
+        "different user scope",
+        "cannot be overwritten",
+        "profile already exists",
+    ]
+    return any(marker in text for marker in markers)
 
 
 def connect_wifi_macos(profile: WifiProfile) -> None:

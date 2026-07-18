@@ -209,6 +209,9 @@ Catatan izin:
 
 - Windows mungkin perlu Command Prompt/PowerShell Administrator untuk memasang
   task tertentu atau membuat profil Wi-Fi.
+- Jika profil Wi-Fi Windows sudah dibuat oleh user lain atau Group Policy,
+  aplikasi tidak menimpa profil tersebut dan akan memakai profil Windows yang
+  sudah ada untuk mencoba koneksi.
 - Linux membutuhkan `nmcli`; shutdown biasanya perlu izin sistem.
 - macOS mungkin meminta izin jaringan atau akses administrator tergantung
   pengaturan perangkat.
