@@ -74,12 +74,12 @@ class WifiMonitorApp(tk.Tk):
         ttk.Entry(settings, textvariable=self.computer_name).grid(row=0, column=1, sticky="ew", padx=10, pady=8)
 
         ttk.Label(settings, text="Waktu tunggu koneksi").grid(row=1, column=0, sticky="w", padx=10, pady=8)
-        ttk.Spinbox(settings, from_=5, to=180, textvariable=self.settle_seconds, width=8).grid(
+        self._number_with_unit(settings, self.settle_seconds, "detik", 5, 180).grid(
             row=1, column=1, sticky="w", padx=10, pady=8
         )
 
         ttk.Label(settings, text="Jeda antar Wi-Fi").grid(row=2, column=0, sticky="w", padx=10, pady=8)
-        ttk.Spinbox(settings, from_=0, to=300, textvariable=self.gap_seconds, width=8).grid(
+        self._number_with_unit(settings, self.gap_seconds, "detik", 0, 300).grid(
             row=2, column=1, sticky="w", padx=10, pady=8
         )
 
@@ -88,12 +88,12 @@ class WifiMonitorApp(tk.Tk):
             text="Shutdown setelah run final berhasil",
             variable=self.shutdown_after_final,
         ).grid(row=4, column=0, sticky="w", padx=10, pady=8)
-        ttk.Spinbox(settings, from_=30, to=3600, textvariable=self.shutdown_delay, width=8).grid(
+        self._number_with_unit(settings, self.shutdown_delay, "detik", 30, 3600).grid(
             row=4, column=1, sticky="w", padx=10, pady=8
         )
 
         ttk.Label(settings, text="Retry koneksi").grid(row=3, column=0, sticky="w", padx=10, pady=8)
-        ttk.Spinbox(settings, from_=0, to=5, textvariable=self.connection_retries, width=8).grid(
+        self._number_with_unit(settings, self.connection_retries, "kali", 0, 5).grid(
             row=3, column=1, sticky="w", padx=10, pady=8
         )
 
@@ -145,8 +145,8 @@ class WifiMonitorApp(tk.Tk):
         ttk.Label(schedule, text="Selesai").grid(row=1, column=2, sticky="w", padx=10, pady=6)
         ttk.Entry(schedule, textvariable=self.schedule_end, width=8).grid(row=1, column=3, sticky="w", padx=10, pady=6)
 
-        ttk.Label(schedule, text="Interval (menit)").grid(row=2, column=0, sticky="w", padx=10, pady=6)
-        ttk.Spinbox(schedule, from_=5, to=1440, increment=5, textvariable=self.schedule_frequency, width=8).grid(
+        ttk.Label(schedule, text="Interval").grid(row=2, column=0, sticky="w", padx=10, pady=6)
+        self._number_with_unit(schedule, self.schedule_frequency, "menit", 5, 1440, increment=5).grid(
             row=2, column=1, sticky="w", padx=10, pady=6
         )
         ttk.Label(schedule, text="Jam final").grid(row=2, column=2, sticky="w", padx=10, pady=6)
@@ -199,9 +199,25 @@ class WifiMonitorApp(tk.Tk):
             "2. Isi jam mulai, jam selesai, interval menit, dan jam final jika diperlukan.\n"
             "3. Klik Pasang Jadwal.\n"
             "4. Klik Cek Jadwal untuk memastikan scheduler OS sudah aktif.\n\n"
+            "Shutdown:\n"
+            "Komputer hanya akan shutdown setelah run final berhasil jika checkbox Shutdown setelah run final berhasil dicentang.\n\n"
             "Jika SSID tidak ditemukan atau password salah, aplikasi tetap membuat laporan dengan status GAGAL, Tipe Error, dan Keterangan.",
         )
         help_text.configure(state=tk.DISABLED)
+
+    def _number_with_unit(
+        self,
+        parent: ttk.Frame,
+        variable: tk.IntVar,
+        unit: str,
+        from_: int,
+        to: int,
+        increment: int = 1,
+    ) -> ttk.Frame:
+        frame = ttk.Frame(parent)
+        ttk.Spinbox(frame, from_=from_, to=to, increment=increment, textvariable=variable, width=8).pack(side=tk.LEFT)
+        ttk.Label(frame, text=unit).pack(side=tk.LEFT, padx=(6, 0))
+        return frame
 
     def _load_existing_config(self) -> None:
         if CONFIG_FILE.exists():

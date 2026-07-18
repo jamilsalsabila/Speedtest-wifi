@@ -137,6 +137,8 @@ python wifi_speed_monitor.py --final
 
 Shutdown hanya dijalankan pada `--final` jika `shutdown_after_final` bernilai
 `true` dan semua tes serta laporan berhasil.
+Jika checkbox `Shutdown setelah run final berhasil` tidak dicentang di GUI,
+komputer tidak akan shutdown.
 
 ## Memasang Jadwal
 
