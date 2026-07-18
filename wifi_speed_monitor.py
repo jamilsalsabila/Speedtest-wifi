@@ -362,6 +362,88 @@ def connect_wifi_linux(profile: WifiProfile) -> None:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
 
 
+def current_wifi_ssid() -> str | None:
+    system = platform.system().lower()
+
+    if system == "windows":
+        result = run(["netsh", "wlan", "show", "interfaces"], timeout=30)
+        if result.returncode != 0:
+            return None
+        for line in result.stdout.splitlines():
+            text = line.strip()
+            if text.lower().startswith("ssid") and "bssid" not in text.lower() and ":" in text:
+                ssid = text.split(":", 1)[1].strip()
+                return ssid or None
+        return None
+
+    if system == "darwin":
+        device = get_macos_wifi_device()
+        result = run(["networksetup", "-getairportnetwork", device], timeout=30)
+        if result.returncode != 0 or "not associated" in result.stdout.lower():
+            return None
+        if ":" in result.stdout:
+            ssid = result.stdout.split(":", 1)[1].strip()
+            return ssid or None
+        return None
+
+    if system == "linux":
+        if not command_exists("nmcli"):
+            return None
+        result = run(["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"], timeout=30)
+        if result.returncode != 0:
+            return None
+        for line in result.stdout.splitlines():
+            if line.lower().startswith("yes:"):
+                return line.split(":", 1)[1].replace("\\:", ":").strip() or None
+
+    return None
+
+
+def disconnect_wifi() -> None:
+    system = platform.system().lower()
+
+    if system == "windows":
+        result = run(["netsh", "wlan", "disconnect"], timeout=30)
+    elif system == "darwin":
+        result = run(["networksetup", "-setairportpower", get_macos_wifi_device(), "off"], timeout=30)
+        if result.returncode == 0:
+            run(["networksetup", "-setairportpower", get_macos_wifi_device(), "on"], timeout=30)
+    elif system == "linux":
+        device = get_linux_wifi_device()
+        if device is None:
+            return
+        result = run(["nmcli", "device", "disconnect", device], timeout=30)
+    else:
+        return
+
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+
+
+def get_linux_wifi_device() -> str | None:
+    if not command_exists("nmcli"):
+        return None
+    result = run(["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"], timeout=30)
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.splitlines():
+        parts = line.split(":")
+        if len(parts) >= 2 and parts[1] == "wifi":
+            return parts[0]
+    return None
+
+
+def restore_wifi_connection(initial_ssid: str | None, config: dict[str, Any], settle_seconds: int, retries: int) -> None:
+    if initial_ssid:
+        profiles = [WifiProfile.from_dict(item) for item in config.get("wifi_profiles", [])]
+        profile = next((item for item in profiles if item.ssid == initial_ssid), WifiProfile(initial_ssid, "", initial_ssid))
+        connect_wifi(profile, settle_seconds, retries)
+        logging.info("Koneksi Wi-Fi dikembalikan ke SSID awal: %s", initial_ssid)
+    else:
+        disconnect_wifi()
+        logging.info("Wi-Fi diputus karena sebelum tes tidak ada SSID Wi-Fi aktif.")
+
+
 def is_connected_to(ssid: str) -> bool:
     system = platform.system().lower()
 
@@ -788,6 +870,10 @@ def run_monitor(config: dict[str, Any], final: bool = False, result_callback: An
     settle_seconds = int(config.get("settle_seconds", 20))
     gap_seconds = int(config.get("gap_between_tests_seconds", 20))
     connection_retries = int(config.get("connection_retries", 2))
+    restore_after_tests = bool(config.get("restore_connection_after_tests", True))
+    initial_ssid = current_wifi_ssid() if restore_after_tests else None
+    if restore_after_tests:
+        logging.info("SSID awal sebelum tes: %s", initial_ssid or "tidak ada")
     all_tests_ok = True
 
     for index, item in enumerate(config["wifi_profiles"]):
@@ -830,6 +916,14 @@ def run_monitor(config: dict[str, Any], final: bool = False, result_callback: An
 
         if index < len(config["wifi_profiles"]) - 1:
             time.sleep(gap_seconds)
+
+    if restore_after_tests:
+        try:
+            restore_wifi_connection(initial_ssid, config, settle_seconds, connection_retries)
+            if result_callback is not None:
+                result_callback({"status": "INFO", "wifi": "Restore", "error": f"Koneksi dikembalikan ke {initial_ssid or 'mode non-Wi-Fi'}."})
+        except Exception:
+            logging.exception("Gagal mengembalikan koneksi awal.")
 
     reports_ok = False
     try:

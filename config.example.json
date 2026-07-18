@@ -3,6 +3,7 @@
   "settle_seconds": 20,
   "gap_between_tests_seconds": 20,
   "connection_retries": 2,
+  "restore_connection_after_tests": true,
   "shutdown_after_final": false,
   "shutdown_delay_seconds": 30,
   "schedule": {

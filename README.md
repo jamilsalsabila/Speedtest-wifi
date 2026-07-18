@@ -95,6 +95,7 @@ Alternatifnya, salin `config.example.json` menjadi `config.json` dan edit isinya
   "settle_seconds": 20,
   "gap_between_tests_seconds": 20,
   "connection_retries": 2,
+  "restore_connection_after_tests": true,
   "shutdown_after_final": false,
   "shutdown_delay_seconds": 30,
   "schedule": {
@@ -118,6 +119,11 @@ Jika SSID tidak ditemukan, password salah, adapter Wi-Fi bermasalah, atau
 speedtest gagal karena internet belum tersedia, aplikasi akan tetap menulis
 baris laporan dengan `status` = `GAGAL`, `Tipe Error`, dan detail di kolom
 `Keterangan`. Koneksi Wi-Fi dicoba ulang sesuai nilai `connection_retries`.
+
+Jika `restore_connection_after_tests` bernilai `true`, aplikasi menyimpan SSID
+Wi-Fi awal sebelum tes dan mengembalikannya setelah semua tes selesai. Jika
+sebelumnya tidak ada Wi-Fi aktif, Wi-Fi akan diputus setelah tes sehingga
+komputer bisa kembali mengandalkan ethernet atau koneksi utama OS.
 
 ## Menjalankan Tes
 

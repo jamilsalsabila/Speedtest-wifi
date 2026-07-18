@@ -32,6 +32,7 @@ class WifiMonitorApp(tk.Tk):
         self.settle_seconds = tk.IntVar(value=20)
         self.gap_seconds = tk.IntVar(value=20)
         self.connection_retries = tk.IntVar(value=2)
+        self.restore_connection_after_tests = tk.BooleanVar(value=True)
         self.shutdown_after_final = tk.BooleanVar(value=False)
         self.shutdown_delay = tk.IntVar(value=30)
         self.schedule_enabled = tk.BooleanVar(value=True)
@@ -87,15 +88,21 @@ class WifiMonitorApp(tk.Tk):
             settings,
             text="Shutdown setelah run final berhasil",
             variable=self.shutdown_after_final,
-        ).grid(row=4, column=0, sticky="w", padx=10, pady=8)
+        ).grid(row=5, column=0, sticky="w", padx=10, pady=8)
         self._number_with_unit(settings, self.shutdown_delay, "detik", 30, 3600).grid(
-            row=4, column=1, sticky="w", padx=10, pady=8
+            row=5, column=1, sticky="w", padx=10, pady=8
         )
 
         ttk.Label(settings, text="Retry koneksi").grid(row=3, column=0, sticky="w", padx=10, pady=8)
         self._number_with_unit(settings, self.connection_retries, "kali", 0, 5).grid(
             row=3, column=1, sticky="w", padx=10, pady=8
         )
+
+        ttk.Checkbutton(
+            settings,
+            text="Kembalikan koneksi setelah tes",
+            variable=self.restore_connection_after_tests,
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=8)
 
         profiles = ttk.LabelFrame(config_tab, text="Langkah 2 - Daftar Wi-Fi")
         profiles.pack(fill=tk.BOTH, expand=True, pady=(14, 0))
@@ -187,6 +194,7 @@ class WifiMonitorApp(tk.Tk):
             "1. Buka tab 1. Konfigurasi.\n"
             "2. Isi Nama komputer.\n"
             "3. Isi waktu tunggu koneksi, jeda antar Wi-Fi, dan retry koneksi.\n"
+            "   Biarkan Kembalikan koneksi setelah tes aktif jika komputer biasa memakai ethernet atau Wi-Fi lain.\n"
             "4. Tambahkan SSID Wi-Fi, password, dan nama di laporan. Nama di laporan akan tampil di kolom Wi-Fi pada Excel/PDF.\n"
             "5. Icon mata menampilkan password, icon mata dicoret menyembunyikan password kembali.\n"
             "6. Klik Simpan Config.\n\n"
@@ -233,6 +241,7 @@ class WifiMonitorApp(tk.Tk):
         self.settle_seconds.set(int(config.get("settle_seconds", 20)))
         self.gap_seconds.set(int(config.get("gap_between_tests_seconds", 20)))
         self.connection_retries.set(int(config.get("connection_retries", 2)))
+        self.restore_connection_after_tests.set(bool(config.get("restore_connection_after_tests", True)))
         self.shutdown_after_final.set(bool(config.get("shutdown_after_final", False)))
         self.shutdown_delay.set(int(config.get("shutdown_delay_seconds", 30)))
         schedule = config.get("schedule") or {}
@@ -325,6 +334,7 @@ class WifiMonitorApp(tk.Tk):
             "settle_seconds": int(self.settle_seconds.get()),
             "gap_between_tests_seconds": int(self.gap_seconds.get()),
             "connection_retries": int(self.connection_retries.get()),
+            "restore_connection_after_tests": bool(self.restore_connection_after_tests.get()),
             "shutdown_after_final": bool(self.shutdown_after_final.get()),
             "shutdown_delay_seconds": int(self.shutdown_delay.get()),
             "schedule": self._collect_schedule(),
@@ -472,7 +482,9 @@ class WifiMonitorApp(tk.Tk):
             self.status_queue.put("__DONE__")
 
     def _queue_test_result(self, row: dict[str, Any]) -> None:
-        if row.get("status") == "OK":
+        if row.get("status") == "INFO":
+            self.status_queue.put(f"{row['wifi']}: {row.get('error') or ''}")
+        elif row.get("status") == "OK":
             self.status_queue.put(
                 f"{row['wifi']}: OK - Download {row['download_mbps']} Mbps, "
                 f"Upload {row['upload_mbps']} Mbps, Ping {row['ping_ms']} ms"
