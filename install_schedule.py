@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import platform
+import re
 import shlex
 import subprocess
 import sys
@@ -12,10 +14,13 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 MONITOR = BASE_DIR / "wifi_speed_monitor.py"
 CONFIG_FILE = BASE_DIR / "config.json"
-WINDOWS_TASK_NAMES = ["WiFi Speed Monitor", "WiFi Speed Monitor Final"]
-WINDOWS_TASK_NAMES.extend(f"WiFi Speed Monitor {index:02d}" for index in range(1, 49))
-MACOS_LAUNCH_AGENT_LABELS = [f"wifi-speed-monitor-{index}" for index in range(1, 49)]
-MACOS_LAUNCH_AGENT_LABELS.append("wifi-speed-monitor-final")
+WINDOWS_TASK_NAME = "WiFi Speed Monitor"
+WINDOWS_FINAL_TASK_NAME = "WiFi Speed Monitor Final"
+MACOS_FINAL_LAUNCH_AGENT_LABEL = "wifi-speed-monitor-final"
+LEGACY_WINDOWS_TASK_NAMES = [WINDOWS_TASK_NAME, WINDOWS_FINAL_TASK_NAME]
+LEGACY_WINDOWS_TASK_NAMES.extend(f"{WINDOWS_TASK_NAME} {index:02d}" for index in range(1, 145))
+LEGACY_MACOS_LAUNCH_AGENT_LABELS = [f"wifi-speed-monitor-{index}" for index in range(1, 145)]
+LEGACY_MACOS_LAUNCH_AGENT_LABELS.append(MACOS_FINAL_LAUNCH_AGENT_LABEL)
 
 
 def run(args: list[str], input_text: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -38,7 +43,7 @@ def install_windows(times: list[str], final_time: str | None) -> None:
     python_exe = scheduler_python()
 
     for index, time_value in enumerate(times, start=1):
-        task_name = "WiFi Speed Monitor" if len(times) == 1 else f"WiFi Speed Monitor {index:02d}"
+        task_name = WINDOWS_TASK_NAME if len(times) == 1 else f"{WINDOWS_TASK_NAME} {index:02d}"
         command = f'"{python_exe}" "{MONITOR}"'
         result = run([
             "schtasks",
@@ -64,7 +69,7 @@ def install_windows(times: list[str], final_time: str | None) -> None:
             "/SC",
             "DAILY",
             "/TN",
-            "WiFi Speed Monitor Final",
+            WINDOWS_FINAL_TASK_NAME,
             "/TR",
             command,
             "/ST",
@@ -157,7 +162,8 @@ def install_linux(times: list[str], final_time: str | None) -> None:
 
 def uninstall_windows() -> None:
     errors = []
-    for task_name in WINDOWS_TASK_NAMES:
+    task_names = windows_app_task_names() or LEGACY_WINDOWS_TASK_NAMES
+    for task_name in task_names:
         result = run(["schtasks", "/Delete", "/TN", task_name, "/F"])
         output = result.stderr.strip() or result.stdout.strip()
         if result.returncode != 0 and output and "cannot find" not in output.lower():
@@ -169,7 +175,8 @@ def uninstall_windows() -> None:
 def uninstall_macos() -> None:
     launch_agents = Path.home() / "Library" / "LaunchAgents"
     errors = []
-    for label in MACOS_LAUNCH_AGENT_LABELS:
+    labels = sorted(set(macos_app_launch_agent_labels() + LEGACY_MACOS_LAUNCH_AGENT_LABELS))
+    for label in labels:
         plist = launch_agents / f"local.{label}.plist"
         unload = unload_macos_launch_agent(label, plist)
         output = unload.stderr.strip() or unload.stdout.strip()
@@ -354,11 +361,7 @@ def schedule_status_for_current_os() -> dict[str, object]:
 
 
 def windows_schedule_status() -> dict[str, object]:
-    installed = []
-    for task_name in WINDOWS_TASK_NAMES:
-        result = run(["schtasks", "/Query", "/TN", task_name])
-        if result.returncode == 0:
-            installed.append(task_name)
+    installed = windows_app_task_names()
     return {
         "os": "Windows",
         "installed_count": len(installed),
@@ -368,13 +371,48 @@ def windows_schedule_status() -> dict[str, object]:
     }
 
 
+def windows_app_task_names() -> list[str]:
+    result = run(["schtasks", "/Query", "/FO", "CSV", "/NH"])
+    if result.returncode != 0:
+        return []
+
+    task_names = []
+    for row in csv.reader(result.stdout.splitlines()):
+        if not row:
+            continue
+        task_name = windows_task_basename(row[0])
+        if is_windows_app_task(task_name) and task_name not in task_names:
+            task_names.append(task_name)
+
+    return sorted(task_names, key=windows_task_sort_key)
+
+
+def windows_task_basename(task_path: str) -> str:
+    normalized = task_path.strip().replace("\\", "/").rstrip("/")
+    return normalized.rsplit("/", 1)[-1]
+
+
+def is_windows_app_task(task_name: str) -> bool:
+    return (
+        task_name == WINDOWS_TASK_NAME
+        or task_name == WINDOWS_FINAL_TASK_NAME
+        or re.fullmatch(rf"{re.escape(WINDOWS_TASK_NAME)} \d+", task_name) is not None
+    )
+
+
+def windows_task_sort_key(task_name: str) -> tuple[int, int, str]:
+    if task_name == WINDOWS_TASK_NAME:
+        return (0, 0, task_name)
+    match = re.fullmatch(rf"{re.escape(WINDOWS_TASK_NAME)} (\d+)", task_name)
+    if match:
+        return (1, int(match.group(1)), task_name)
+    if task_name == WINDOWS_FINAL_TASK_NAME:
+        return (2, 0, task_name)
+    return (3, 0, task_name)
+
+
 def macos_schedule_status() -> dict[str, object]:
-    launch_agents = Path.home() / "Library" / "LaunchAgents"
-    installed = [
-        f"local.{label}"
-        for label in MACOS_LAUNCH_AGENT_LABELS
-        if (launch_agents / f"local.{label}.plist").exists()
-    ]
+    installed = [f"local.{label}" for label in macos_app_launch_agent_labels()]
 
     loaded = []
     for label in installed:
@@ -389,6 +427,32 @@ def macos_schedule_status() -> dict[str, object]:
         "loaded_count": len(loaded),
         "loaded": loaded,
     }
+
+
+def macos_app_launch_agent_labels() -> list[str]:
+    launch_agents = Path.home() / "Library" / "LaunchAgents"
+    labels = []
+    for plist in launch_agents.glob("local.wifi-speed-monitor*.plist"):
+        label = plist.stem.removeprefix("local.")
+        if is_macos_app_launch_agent(label):
+            labels.append(label)
+    return sorted(set(labels), key=macos_launch_agent_sort_key)
+
+
+def is_macos_app_launch_agent(label: str) -> bool:
+    return (
+        label == MACOS_FINAL_LAUNCH_AGENT_LABEL
+        or re.fullmatch(r"wifi-speed-monitor-\d+", label) is not None
+    )
+
+
+def macos_launch_agent_sort_key(label: str) -> tuple[int, int, str]:
+    match = re.fullmatch(r"wifi-speed-monitor-(\d+)", label)
+    if match:
+        return (0, int(match.group(1)), label)
+    if label == MACOS_FINAL_LAUNCH_AGENT_LABEL:
+        return (1, 0, label)
+    return (2, 0, label)
 
 
 def linux_schedule_status() -> dict[str, object]:

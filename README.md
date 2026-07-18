@@ -171,7 +171,8 @@ ulang agar path Python di scheduler diperbarui.
 Jika jadwal sudah tidak dibutuhkan, klik `Hapus Jadwal` di GUI. Aplikasi hanya
 menghapus jadwal milik Wi-Fi Speed Monitor:
 
-- Windows: task bernama `WiFi Speed Monitor`.
+- Windows: task bernama `WiFi Speed Monitor`, `WiFi Speed Monitor NN`, dan
+  `WiFi Speed Monitor Final`.
 - Linux: baris cron dengan marker `# wifi-speed-monitor`.
 - macOS: LaunchAgent `local.wifi-speed-monitor-*.plist`.
 
