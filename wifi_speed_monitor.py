@@ -375,7 +375,94 @@ def connect_wifi_linux(profile: WifiProfile) -> None:
 
     result = run(args, timeout=60)
     if result.returncode != 0:
+        output = result.stderr.strip() or result.stdout.strip()
+        if is_linux_existing_profile_error(output):
+            logging.info("Koneksi Wi-Fi Linux sudah ada untuk %s; memakai koneksi NetworkManager yang tersedia.", profile.ssid)
+            if activate_existing_linux_connection(profile):
+                return
+        raise RuntimeError(output)
+
+
+def is_linux_existing_profile_error(output: str) -> bool:
+    text = output.lower()
+    markers = [
+        "already exists",
+        "connection already exists",
+        "exists with uuid",
+        "duplicate",
+    ]
+    return any(marker in text for marker in markers)
+
+
+def activate_existing_linux_connection(profile: WifiProfile) -> bool:
+    connection_name = find_linux_wifi_connection(profile.ssid)
+    if not connection_name:
+        return False
+
+    if profile.password:
+        result = run(
+            [
+                "nmcli",
+                "connection",
+                "modify",
+                connection_name,
+                "wifi-sec.key-mgmt",
+                "wpa-psk",
+                "wifi-sec.psk",
+                profile.password,
+            ],
+            timeout=45,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+
+    result = run(["nmcli", "connection", "up", connection_name], timeout=60)
+    if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+    return True
+
+
+def find_linux_wifi_connection(ssid: str) -> str | None:
+    result = run(
+        ["nmcli", "-t", "-f", "NAME,TYPE,802-11-wireless.ssid", "connection", "show"],
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return None
+
+    for line in result.stdout.splitlines():
+        fields = parse_nmcli_terse_line(line)
+        if len(fields) < 2 or fields[1] != "802-11-wireless":
+            continue
+
+        name = fields[0]
+        saved_ssid = fields[2] if len(fields) > 2 else ""
+        if saved_ssid == ssid or name == ssid:
+            return name
+    return None
+
+
+def parse_nmcli_terse_line(line: str) -> list[str]:
+    fields = []
+    current = []
+    escaped = False
+
+    for char in line:
+        if escaped:
+            current.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == ":":
+            fields.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+
+    if escaped:
+        current.append("\\")
+    fields.append("".join(current))
+    return fields
 
 
 def current_wifi_ssid() -> str | None:
