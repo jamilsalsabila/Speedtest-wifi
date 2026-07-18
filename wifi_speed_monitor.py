@@ -856,6 +856,7 @@ def write_daily_chart_pair(
         ping_chart.add_data(ping_data, titles_from_data=True)
         ping_chart.set_categories(categories)
         style_line_series(ping_chart, ["70AD47"])
+        ping_chart.legend = None
         ws.add_chart(ping_chart, f"P{start_row}")
 
     for column, width in enumerate([11, 18, 18, 12], start=1):
