@@ -310,10 +310,9 @@ def windows_connect_commands(profile: WifiProfile) -> list[list[str]]:
             profile_names.append(name)
 
     interfaces = [None]
-    interface_name = get_windows_wifi_interface()
-    if interface_name:
-        interfaces.append(interface_name)
-    interfaces.append("*")
+    for interface_name in get_windows_wifi_interfaces():
+        if interface_name not in interfaces:
+            interfaces.append(interface_name)
 
     commands = []
     for profile_name in profile_names:
@@ -385,16 +384,32 @@ def normalize_wifi_name(value: str) -> str:
 
 
 def get_windows_wifi_interface() -> str | None:
+    interfaces = get_windows_wifi_interfaces()
+    return interfaces[0] if interfaces else None
+
+
+def get_windows_wifi_interfaces() -> list[str]:
     result = run(["netsh", "wlan", "show", "interfaces"], timeout=30)
     if result.returncode != 0:
-        return None
+        return windows_common_wifi_interfaces()
 
+    interfaces = []
     for line in command_stdout_lines(result):
         text = line.strip()
-        if text.lower().startswith("name") and ":" in text:
+        label = text.split(":", 1)[0].strip().lower() if ":" in text else ""
+        if label in {"name", "nama"}:
             name = text.split(":", 1)[1].strip()
-            return name or None
-    return None
+            if name and name not in interfaces:
+                interfaces.append(name)
+
+    for name in windows_common_wifi_interfaces():
+        if name not in interfaces:
+            interfaces.append(name)
+    return interfaces
+
+
+def windows_common_wifi_interfaces() -> list[str]:
+    return ["Wi-Fi", "WiFi", "Wireless Network Connection"]
 
 
 def add_windows_profile(profile: WifiProfile) -> None:
