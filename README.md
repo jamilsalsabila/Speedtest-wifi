@@ -178,6 +178,8 @@ Scheduler otomatis memakai Python dari `.venv` project jika tersedia. Ini
 penting supaya jadwal terpasang memakai dependency yang sama dengan GUI. Jika
 sebelumnya jadwal pernah dibuat sebelum `.venv` siap, klik `Pasang Jadwal`
 ulang agar path Python di scheduler diperbarui.
+Di Windows, scheduler memakai `pythonw.exe` jika tersedia supaya jendela
+terminal tidak muncul saat jadwal berjalan.
 
 Jika jadwal sudah tidak dibutuhkan, klik `Hapus Jadwal` di GUI. Aplikasi hanya
 menghapus jadwal milik Wi-Fi Speed Monitor:

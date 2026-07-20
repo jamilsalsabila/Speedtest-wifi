@@ -29,10 +29,18 @@ def run(args: list[str], input_text: str | None = None) -> subprocess.CompletedP
 
 def scheduler_python() -> Path:
     if platform.system().lower() == "windows":
-        venv_python = BASE_DIR / ".venv" / "Scripts" / "python.exe"
-    else:
-        venv_python = BASE_DIR / ".venv" / "bin" / "python"
+        scripts_dir = BASE_DIR / ".venv" / "Scripts"
+        for candidate in (scripts_dir / "pythonw.exe", scripts_dir / "python.exe"):
+            if candidate.exists():
+                return candidate
 
+        current = Path(sys.executable).resolve()
+        pythonw = current.with_name("pythonw.exe")
+        if pythonw.exists():
+            return pythonw
+        return current
+
+    venv_python = BASE_DIR / ".venv" / "bin" / "python"
     if venv_python.exists():
         return venv_python
     return Path(sys.executable).resolve()
