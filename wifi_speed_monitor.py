@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -282,9 +283,109 @@ def connect_wifi_windows(profile: WifiProfile) -> None:
     if profile.password:
         add_windows_profile(profile)
 
-    result = run(["netsh", "wlan", "connect", f"name={profile.ssid}", f"ssid={profile.ssid}"], timeout=45)
+    errors = []
+    for args in windows_connect_commands(profile):
+        result = run(args, timeout=45)
+        if result.returncode == 0:
+            return
+        output = result.stderr.strip() or result.stdout.strip()
+        if output:
+            errors.append(output)
+
+    raise RuntimeError(errors[-1] if errors else f"Windows gagal menghubungkan ke {profile.ssid}.")
+
+
+def windows_connect_commands(profile: WifiProfile) -> list[list[str]]:
+    profile_names = [profile.ssid]
+    for name in windows_profile_names_for_ssid(profile.ssid):
+        if name not in profile_names:
+            profile_names.append(name)
+
+    interfaces = [None]
+    interface_name = get_windows_wifi_interface()
+    if interface_name:
+        interfaces.append(interface_name)
+
+    commands = []
+    for profile_name in profile_names:
+        for interface in interfaces:
+            command = ["netsh", "wlan", "connect", f"name={profile_name}", f"ssid={profile.ssid}"]
+            if interface:
+                command.append(f"interface={interface}")
+            commands.append(command)
+
+    for profile_name in profile_names:
+        for interface in interfaces:
+            command = ["netsh", "wlan", "connect", f"name={profile_name}"]
+            if interface:
+                command.append(f"interface={interface}")
+            commands.append(command)
+
+    unique_commands = []
+    seen = set()
+    for command in commands:
+        key = tuple(command)
+        if key not in seen:
+            unique_commands.append(command)
+            seen.add(key)
+    return unique_commands
+
+
+def windows_profile_names_for_ssid(ssid: str) -> list[str]:
+    result = run(["netsh", "wlan", "show", "profiles"], timeout=30)
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+        return []
+
+    names = []
+    for line in result.stdout.splitlines():
+        text = line.strip()
+        lowered = text.lower()
+        if ":" not in text or ("profile" not in lowered and "profil" not in lowered):
+            continue
+        name = text.split(":", 1)[1].strip()
+        if not name or name in names:
+            continue
+        if name_matches_ssid(name, ssid) or windows_profile_has_ssid(name, ssid):
+            names.append(name)
+    return names
+
+
+def windows_profile_has_ssid(profile_name: str, ssid: str) -> bool:
+    result = run(["netsh", "wlan", "show", "profile", f"name={profile_name}"], timeout=30)
+    if result.returncode != 0:
+        return False
+
+    for line in result.stdout.splitlines():
+        text = line.strip()
+        if ":" not in text or "ssid" not in text.lower():
+            continue
+        value = text.split(":", 1)[1].strip().strip('"')
+        if name_matches_ssid(value, ssid):
+            return True
+    return False
+
+
+def name_matches_ssid(name: str, ssid: str) -> bool:
+    normalized_name = normalize_wifi_name(name)
+    normalized_ssid = normalize_wifi_name(ssid)
+    return normalized_name == normalized_ssid or normalized_ssid in normalized_name
+
+
+def normalize_wifi_name(value: str) -> str:
+    return re.sub(r"\s+", "", value).lower()
+
+
+def get_windows_wifi_interface() -> str | None:
+    result = run(["netsh", "wlan", "show", "interfaces"], timeout=30)
+    if result.returncode != 0:
+        return None
+
+    for line in result.stdout.splitlines():
+        text = line.strip()
+        if text.lower().startswith("name") and ":" in text:
+            name = text.split(":", 1)[1].strip()
+            return name or None
+    return None
 
 
 def add_windows_profile(profile: WifiProfile) -> None:
