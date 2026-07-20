@@ -11,7 +11,10 @@
     "start_time": "08:30",
     "end_time": "20:30",
     "frequency_minutes": 60,
-    "final_time": "21:00"
+    "final_time": "21:00",
+    "active_start_date": "2026-07-20",
+    "active_days": 0,
+    "active_until_date": ""
   },
   "wifi_profiles": [
     {

@@ -103,7 +103,10 @@ Alternatifnya, salin `config.example.json` menjadi `config.json` dan edit isinya
     "start_time": "08:30",
     "end_time": "20:30",
     "frequency_minutes": 60,
-    "final_time": "21:00"
+    "final_time": "21:00",
+    "active_start_date": "2026-07-20",
+    "active_days": 0,
+    "active_until_date": ""
   },
   "wifi_profiles": [
     {
@@ -154,10 +157,18 @@ Jadwal bisa diatur lewat GUI pada bagian `Jadwal Tes`:
 - `Selesai`: batas jam tes reguler terakhir.
 - `Interval (menit)`: jarak antar tes otomatis.
 - `Jam final`: run tambahan dengan argumen `--final`.
+- `Mulai aktif tanggal`: tanggal pertama jadwal boleh menjalankan tes.
+- `Aktif selama`: durasi aktif dalam hari. Isi `0` untuk tanpa batas.
+- `Sampai tanggal`: tanggal terakhir jadwal aktif. Jika kosong dan `Aktif
+  selama` lebih dari `0`, tanggal selesai dihitung otomatis dari tanggal mulai.
 
 Klik `Pasang Jadwal` setelah konfigurasi disimpan. Contoh: mulai `08:30`,
 selesai `20:30`, setiap `60` menit akan membuat jadwal 08:30, 09:30, 10:30,
 dan seterusnya sampai 20:30.
+
+Jika masa aktif jadwal sudah lewat, run scheduler berikutnya akan menghapus
+jadwal Wi-Fi Speed Monitor dari scheduler OS secara otomatis lalu berhenti
+tanpa menjalankan speedtest.
 
 Klik `Cek Jadwal` untuk memastikan scheduler OS sudah berisi jadwal aplikasi.
 Setelah `Pasang Jadwal`, aplikasi juga melakukan verifikasi otomatis dan

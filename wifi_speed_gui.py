@@ -5,6 +5,7 @@ import platform
 import queue
 import threading
 import tkinter as tk
+from datetime import date, datetime, timedelta
 from tkinter import messagebox, ttk
 from typing import Any
 
@@ -40,6 +41,9 @@ class WifiMonitorApp(tk.Tk):
         self.schedule_end = tk.StringVar(value="20:30")
         self.schedule_frequency = tk.IntVar(value=60)
         self.schedule_final_time = tk.StringVar(value="21:00")
+        self.schedule_active_start_date = tk.StringVar(value=date.today().isoformat())
+        self.schedule_active_days = tk.IntVar(value=0)
+        self.schedule_active_until_date = tk.StringVar(value="")
         self.schedule_preview = tk.StringVar(value="")
 
         self._build_ui()
@@ -160,8 +164,22 @@ class WifiMonitorApp(tk.Tk):
         ttk.Entry(schedule, textvariable=self.schedule_final_time, width=8).grid(
             row=2, column=3, sticky="w", padx=10, pady=6
         )
+
+        ttk.Label(schedule, text="Mulai aktif tanggal").grid(row=3, column=0, sticky="w", padx=10, pady=6)
+        ttk.Entry(schedule, textvariable=self.schedule_active_start_date, width=12).grid(
+            row=3, column=1, sticky="w", padx=10, pady=6
+        )
+        ttk.Label(schedule, text="Aktif selama").grid(row=3, column=2, sticky="w", padx=10, pady=6)
+        self._number_with_unit(schedule, self.schedule_active_days, "hari", 0, 3650).grid(
+            row=3, column=3, sticky="w", padx=10, pady=6
+        )
+
+        ttk.Label(schedule, text="Sampai tanggal").grid(row=4, column=0, sticky="w", padx=10, pady=6)
+        ttk.Entry(schedule, textvariable=self.schedule_active_until_date, width=12).grid(
+            row=4, column=1, sticky="w", padx=10, pady=6
+        )
         ttk.Label(schedule, textvariable=self.schedule_preview).grid(
-            row=3, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8)
+            row=5, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8)
         )
 
         for variable in (
@@ -170,6 +188,9 @@ class WifiMonitorApp(tk.Tk):
             self.schedule_frequency,
             self.schedule_final_time,
             self.schedule_enabled,
+            self.schedule_active_start_date,
+            self.schedule_active_days,
+            self.schedule_active_until_date,
         ):
             variable.trace_add("write", lambda *_: self._refresh_schedule_preview())
 
@@ -205,8 +226,9 @@ class WifiMonitorApp(tk.Tk):
             "Jadwal otomatis:\n"
             "1. Aktifkan jadwal.\n"
             "2. Isi jam mulai, jam selesai, interval menit, dan jam final jika diperlukan.\n"
-            "3. Klik Pasang Jadwal.\n"
-            "4. Klik Cek Jadwal untuk memastikan scheduler OS sudah aktif.\n\n"
+            "3. Isi tanggal mulai aktif, durasi hari, atau tanggal sampai aktif jika jadwal hanya sementara.\n"
+            "4. Klik Pasang Jadwal.\n"
+            "5. Klik Cek Jadwal untuk memastikan scheduler OS sudah aktif.\n\n"
             "Shutdown:\n"
             "Komputer hanya akan shutdown setelah run final berhasil jika checkbox Shutdown setelah run final berhasil dicentang.\n\n"
             "Jika SSID tidak ditemukan atau password salah, aplikasi tetap membuat laporan dengan status GAGAL, Tipe Error, dan Keterangan.",
@@ -250,6 +272,9 @@ class WifiMonitorApp(tk.Tk):
         self.schedule_end.set(str(schedule.get("end_time", "20:30")))
         self.schedule_frequency.set(int(schedule.get("frequency_minutes", 60)))
         self.schedule_final_time.set(str(schedule.get("final_time", "21:00")))
+        self.schedule_active_start_date.set(str(schedule.get("active_start_date") or date.today().isoformat()))
+        self.schedule_active_days.set(int(schedule.get("active_days", 0)))
+        self.schedule_active_until_date.set(str(schedule.get("active_until_date", "")))
 
         for profile in config.get("wifi_profiles", []):
             self._add_profile(profile)
@@ -346,13 +371,32 @@ class WifiMonitorApp(tk.Tk):
         if final_time:
             generate_times(final_time, final_time, 1)
 
+        active_start_date = self.schedule_active_start_date.get().strip()
+        active_days = int(self.schedule_active_days.get())
+        active_until_date = self.schedule_active_until_date.get().strip()
+        if active_start_date:
+            parse_date(active_start_date)
+        if active_days < 0:
+            raise ValueError("Aktif selama tidak boleh kurang dari 0 hari.")
+        if active_until_date:
+            parse_date(active_until_date)
+        elif active_days > 0:
+            start = parse_date(active_start_date or date.today().isoformat())
+            active_until_date = (start + timedelta(days=active_days - 1)).isoformat()
+
         schedule = {
             "enabled": bool(self.schedule_enabled.get()),
             "start_time": self.schedule_start.get().strip(),
             "end_time": self.schedule_end.get().strip(),
             "frequency_minutes": int(self.schedule_frequency.get()),
             "final_time": final_time,
+            "active_start_date": active_start_date,
+            "active_days": active_days,
+            "active_until_date": active_until_date,
         }
+        if schedule["active_start_date"] and schedule["active_until_date"]:
+            if parse_date(schedule["active_until_date"]) < parse_date(schedule["active_start_date"]):
+                raise ValueError("Tanggal sampai aktif tidak boleh lebih awal dari tanggal mulai aktif.")
         if schedule["enabled"]:
             generate_times(
                 schedule["start_time"],
@@ -390,9 +434,26 @@ class WifiMonitorApp(tk.Tk):
             final_time = self.schedule_final_time.get().strip()
             if final_time:
                 preview += f"; final {final_time}"
+            active_text = self._schedule_active_text()
+            if active_text:
+                preview += f"; {active_text}"
             self.schedule_preview.set(preview)
         except Exception as exc:
             self.schedule_preview.set(f"Jadwal belum valid: {exc}")
+
+    def _schedule_active_text(self) -> str:
+        start_text = self.schedule_active_start_date.get().strip()
+        days = int(self.schedule_active_days.get())
+        until_text = self.schedule_active_until_date.get().strip()
+        if until_text:
+            return f"aktif sampai {until_text}"
+        if days > 0:
+            start = parse_date(start_text or date.today().isoformat())
+            until = start + timedelta(days=days - 1)
+            return f"aktif {days} hari sampai {until.isoformat()}"
+        if start_text:
+            return f"aktif mulai {start_text}"
+        return ""
 
     def _run_test(self, final: bool = False) -> None:
         if not self._save_config():
@@ -471,7 +532,12 @@ class WifiMonitorApp(tk.Tk):
         try:
             setup()
             config = load_config(CONFIG_FILE)
-            code = run_monitor(config, final=final, result_callback=self._queue_test_result)
+            code = run_monitor(
+                config,
+                final=final,
+                result_callback=self._queue_test_result,
+                enforce_schedule_lifecycle=False,
+            )
             if code == 0:
                 self.status_queue.put("Tes selesai. Laporan tersimpan di folder reports.")
             else:
@@ -523,6 +589,13 @@ class WifiMonitorApp(tk.Tk):
 def main() -> None:
     app = WifiMonitorApp()
     app.mainloop()
+
+
+def parse_date(value: str) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError(f"Format tanggal harus YYYY-MM-DD: {value}") from exc
 
 
 if __name__ == "__main__":

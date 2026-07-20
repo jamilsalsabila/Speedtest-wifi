@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -969,7 +969,63 @@ def shutdown_computer(delay_seconds: int = 30) -> None:
         raise RuntimeError(f"Shutdown belum didukung untuk OS: {platform.system()}")
 
 
-def run_monitor(config: dict[str, Any], final: bool = False, result_callback: Any | None = None) -> int:
+def should_skip_for_schedule_lifecycle(config: dict[str, Any], result_callback: Any | None = None) -> bool:
+    schedule = config.get("schedule") or {}
+    if not schedule:
+        return False
+
+    today = date.today()
+    active_start = parse_schedule_date(str(schedule.get("active_start_date", "")).strip())
+    active_until = parse_schedule_date(str(schedule.get("active_until_date", "")).strip())
+
+    active_days = int(schedule.get("active_days", 0) or 0)
+    if active_until is None and active_days > 0:
+        start = active_start or today
+        active_until = start + timedelta(days=active_days - 1)
+
+    if active_start and today < active_start:
+        message = f"Jadwal belum aktif. Mulai aktif pada {active_start.isoformat()}."
+        logging.info(message)
+        if result_callback is not None:
+            result_callback({"status": "INFO", "wifi": "Schedule", "error": message})
+        return True
+
+    if active_until and today > active_until:
+        message = f"Masa aktif jadwal selesai pada {active_until.isoformat()}; menghapus jadwal OS."
+        logging.info(message)
+        if result_callback is not None:
+            result_callback({"status": "INFO", "wifi": "Schedule", "error": message})
+        try:
+            from install_schedule import uninstall_for_current_os
+
+            uninstall_for_current_os()
+            logging.info("Jadwal OS berhasil dihapus otomatis.")
+        except Exception:
+            logging.exception("Gagal menghapus jadwal OS otomatis.")
+        return True
+
+    return False
+
+
+def parse_schedule_date(value: str) -> date | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        logging.warning("Tanggal jadwal tidak valid: %s", value)
+        return None
+
+
+def run_monitor(
+    config: dict[str, Any],
+    final: bool = False,
+    result_callback: Any | None = None,
+    enforce_schedule_lifecycle: bool = True,
+) -> int:
+    if enforce_schedule_lifecycle and should_skip_for_schedule_lifecycle(config, result_callback):
+        return 0
+
     computer_name = config.get("computer_name") or platform.node() or "Komputer"
     settle_seconds = int(config.get("settle_seconds", 20))
     gap_seconds = int(config.get("gap_between_tests_seconds", 20))
