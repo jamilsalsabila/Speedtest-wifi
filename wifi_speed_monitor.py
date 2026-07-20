@@ -135,6 +135,14 @@ def run(
     )
 
 
+def command_output(result: subprocess.CompletedProcess[str]) -> str:
+    return (result.stderr or "").strip() or (result.stdout or "").strip()
+
+
+def command_stdout_lines(result: subprocess.CompletedProcess[str]) -> list[str]:
+    return (result.stdout or "").splitlines()
+
+
 def load_config(config_file: Path = CONFIG_FILE) -> dict[str, Any]:
     if not config_file.exists():
         raise FileNotFoundError(
@@ -201,7 +209,7 @@ def available_wifi_ssids() -> set[str] | None:
             if result.returncode != 0:
                 return None
             ssids = set()
-            for line in result.stdout.splitlines():
+            for line in command_stdout_lines(result):
                 if line.strip().lower().startswith("ssid") and ":" in line:
                     ssid = line.split(":", 1)[1].strip()
                     if ssid:
@@ -216,7 +224,7 @@ def available_wifi_ssids() -> set[str] | None:
             if result.returncode != 0:
                 return None
             ssids = set()
-            for line in result.stdout.splitlines()[1:]:
+            for line in command_stdout_lines(result)[1:]:
                 text = line.strip()
                 if not text:
                     continue
@@ -231,7 +239,7 @@ def available_wifi_ssids() -> set[str] | None:
             result = run(["nmcli", "-t", "-f", "SSID", "dev", "wifi", "list"], timeout=45)
             if result.returncode != 0:
                 return None
-            return {line.replace("\\:", ":").strip() for line in result.stdout.splitlines() if line.strip()}
+            return {line.replace("\\:", ":").strip() for line in command_stdout_lines(result) if line.strip()}
     except Exception:
         logging.exception("Gagal memindai daftar SSID.")
         return None
@@ -288,7 +296,7 @@ def connect_wifi_windows(profile: WifiProfile) -> None:
         result = run(args, timeout=45)
         if result.returncode == 0:
             return
-        output = result.stderr.strip() or result.stdout.strip()
+        output = command_output(result)
         if output:
             errors.append(output)
 
@@ -305,6 +313,7 @@ def windows_connect_commands(profile: WifiProfile) -> list[list[str]]:
     interface_name = get_windows_wifi_interface()
     if interface_name:
         interfaces.append(interface_name)
+    interfaces.append("*")
 
     commands = []
     for profile_name in profile_names:
@@ -337,7 +346,7 @@ def windows_profile_names_for_ssid(ssid: str) -> list[str]:
         return []
 
     names = []
-    for line in result.stdout.splitlines():
+    for line in command_stdout_lines(result):
         text = line.strip()
         lowered = text.lower()
         if ":" not in text or ("profile" not in lowered and "profil" not in lowered):
@@ -355,7 +364,7 @@ def windows_profile_has_ssid(profile_name: str, ssid: str) -> bool:
     if result.returncode != 0:
         return False
 
-    for line in result.stdout.splitlines():
+    for line in command_stdout_lines(result):
         text = line.strip()
         if ":" not in text or "ssid" not in text.lower():
             continue
@@ -380,7 +389,7 @@ def get_windows_wifi_interface() -> str | None:
     if result.returncode != 0:
         return None
 
-    for line in result.stdout.splitlines():
+    for line in command_stdout_lines(result):
         text = line.strip()
         if text.lower().startswith("name") and ":" in text:
             name = text.split(":", 1)[1].strip()
@@ -423,7 +432,7 @@ def add_windows_profile(profile: WifiProfile) -> None:
     try:
         result = run(["netsh", "wlan", "add", "profile", f"filename={temp_path}", "user=current"], timeout=45)
         if result.returncode != 0:
-            output = result.stderr.strip() or result.stdout.strip()
+            output = command_output(result)
             if is_windows_existing_profile_error(output):
                 logging.info("Profil Wi-Fi Windows sudah ada untuk %s; memakai profil yang tersedia.", profile.ssid)
                 return
@@ -452,12 +461,12 @@ def connect_wifi_macos(profile: WifiProfile) -> None:
 
     result = run(args, timeout=60)
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+        raise RuntimeError(command_output(result))
 
 
 def get_macos_wifi_device() -> str:
     result = run(["networksetup", "-listallhardwareports"], timeout=30)
-    lines = result.stdout.splitlines()
+    lines = command_stdout_lines(result)
     for index, line in enumerate(lines):
         if "Hardware Port: Wi-Fi" in line or "Hardware Port: AirPort" in line:
             for detail in lines[index + 1 : index + 4]:
@@ -476,7 +485,7 @@ def connect_wifi_linux(profile: WifiProfile) -> None:
 
     result = run(args, timeout=60)
     if result.returncode != 0:
-        output = result.stderr.strip() or result.stdout.strip()
+        output = command_output(result)
         if is_linux_existing_profile_error(output):
             logging.info("Koneksi Wi-Fi Linux sudah ada untuk %s; memakai koneksi NetworkManager yang tersedia.", profile.ssid)
             if activate_existing_linux_connection(profile):
@@ -515,11 +524,11 @@ def activate_existing_linux_connection(profile: WifiProfile) -> bool:
             timeout=45,
         )
         if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+            raise RuntimeError(command_output(result))
 
     result = run(["nmcli", "connection", "up", connection_name], timeout=60)
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+        raise RuntimeError(command_output(result))
     return True
 
 
@@ -531,7 +540,7 @@ def find_linux_wifi_connection(ssid: str) -> str | None:
     if result.returncode != 0:
         return None
 
-    for line in result.stdout.splitlines():
+    for line in command_stdout_lines(result):
         fields = parse_nmcli_terse_line(line)
         if len(fields) < 2 or fields[1] != "802-11-wireless":
             continue
@@ -573,7 +582,7 @@ def current_wifi_ssid() -> str | None:
         result = run(["netsh", "wlan", "show", "interfaces"], timeout=30)
         if result.returncode != 0:
             return None
-        for line in result.stdout.splitlines():
+        for line in command_stdout_lines(result):
             text = line.strip()
             if text.lower().startswith("ssid") and "bssid" not in text.lower() and ":" in text:
                 ssid = text.split(":", 1)[1].strip()
@@ -583,10 +592,11 @@ def current_wifi_ssid() -> str | None:
     if system == "darwin":
         device = get_macos_wifi_device()
         result = run(["networksetup", "-getairportnetwork", device], timeout=30)
-        if result.returncode != 0 or "not associated" in result.stdout.lower():
+        stdout = result.stdout or ""
+        if result.returncode != 0 or "not associated" in stdout.lower():
             return None
-        if ":" in result.stdout:
-            ssid = result.stdout.split(":", 1)[1].strip()
+        if ":" in stdout:
+            ssid = stdout.split(":", 1)[1].strip()
             return ssid or None
         return None
 
@@ -596,7 +606,7 @@ def current_wifi_ssid() -> str | None:
         result = run(["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"], timeout=30)
         if result.returncode != 0:
             return None
-        for line in result.stdout.splitlines():
+        for line in command_stdout_lines(result):
             if line.lower().startswith("yes:"):
                 return line.split(":", 1)[1].replace("\\:", ":").strip() or None
 
@@ -607,7 +617,18 @@ def disconnect_wifi() -> None:
     system = platform.system().lower()
 
     if system == "windows":
-        result = run(["netsh", "wlan", "disconnect"], timeout=30)
+        interface_name = get_windows_wifi_interface()
+        commands = []
+        if interface_name:
+            commands.append(["netsh", "wlan", "disconnect", f"interface={interface_name}"])
+        commands.append(["netsh", "wlan", "disconnect", "interface=*"])
+        commands.append(["netsh", "wlan", "disconnect"])
+
+        result = None
+        for command in commands:
+            result = run(command, timeout=30)
+            if result.returncode == 0:
+                break
     elif system == "darwin":
         result = run(["networksetup", "-setairportpower", get_macos_wifi_device(), "off"], timeout=30)
         if result.returncode == 0:
@@ -621,7 +642,7 @@ def disconnect_wifi() -> None:
         return
 
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+        raise RuntimeError(command_output(result))
 
 
 def get_linux_wifi_device() -> str | None:
@@ -630,7 +651,7 @@ def get_linux_wifi_device() -> str | None:
     result = run(["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"], timeout=30)
     if result.returncode != 0:
         return None
-    for line in result.stdout.splitlines():
+    for line in command_stdout_lines(result):
         parts = line.split(":")
         if len(parts) >= 2 and parts[1] == "wifi":
             return parts[0]
@@ -653,16 +674,16 @@ def is_connected_to(ssid: str) -> bool:
 
     if system == "windows":
         result = run(["netsh", "wlan", "show", "interfaces"], timeout=30)
-        return result.returncode == 0 and ssid.lower() in result.stdout.lower()
+        return result.returncode == 0 and ssid.lower() in (result.stdout or "").lower()
 
     if system == "darwin":
         device = get_macos_wifi_device()
         result = run(["networksetup", "-getairportnetwork", device], timeout=30)
-        return result.returncode == 0 and ssid.lower() in result.stdout.lower()
+        return result.returncode == 0 and ssid.lower() in (result.stdout or "").lower()
 
     if system == "linux":
         result = run(["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"], timeout=30)
-        return result.returncode == 0 and f"yes:{ssid}".lower() in result.stdout.lower()
+        return result.returncode == 0 and f"yes:{ssid}".lower() in (result.stdout or "").lower()
 
     return False
 
@@ -674,11 +695,11 @@ def perform_speedtest() -> dict[str, float]:
         env=speedtest_env(),
     )
     if result.returncode != 0:
-        message = result.stderr.strip() or result.stdout.strip()
+        message = command_output(result)
         error_type = ERROR_NO_INTERNET if "urlopen error" in message.lower() else ERROR_SPEEDTEST_FAILED
         raise WifiMonitorError(error_type, message)
 
-    data = json.loads(result.stdout)
+    data = json.loads(result.stdout or "{}")
     return {
         "download_mbps": round(float(data["download"]) / 1_000_000, 2),
         "upload_mbps": round(float(data["upload"]) / 1_000_000, 2),
