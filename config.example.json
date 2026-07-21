@@ -16,6 +16,23 @@
     "active_days": 0,
     "active_until_date": ""
   },
+  "email_report": {
+    "enabled": false,
+    "send_after_final": true,
+    "smtp_host": "smtp.example.com",
+    "smtp_port": 587,
+    "use_tls": true,
+    "use_ssl": false,
+    "username": "user@example.com",
+    "password": "app-password",
+    "from": "user@example.com",
+    "to": "tujuan@example.com",
+    "subject": "Laporan Wi-Fi {date}",
+    "attach_excel": true,
+    "attach_pdf": true,
+    "weekdays": [5],
+    "dates": ["2026-07-22", "2026-08-22", "2026-09-22"]
+  },
   "wifi_profiles": [
     {
       "ssid": "Nama WiFi",

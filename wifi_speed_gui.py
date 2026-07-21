@@ -56,6 +56,20 @@ class WifiMonitorApp(tk.Tk):
         self.schedule_active_days = tk.IntVar(value=0)
         self.schedule_active_until_date = tk.StringVar(value="")
         self.schedule_preview = tk.StringVar(value="")
+        self.email_enabled = tk.BooleanVar(value=False)
+        self.email_smtp_host = tk.StringVar(value="")
+        self.email_smtp_port = tk.IntVar(value=587)
+        self.email_use_tls = tk.BooleanVar(value=True)
+        self.email_use_ssl = tk.BooleanVar(value=False)
+        self.email_username = tk.StringVar(value="")
+        self.email_password = tk.StringVar(value="")
+        self.email_from = tk.StringVar(value="")
+        self.email_to = tk.StringVar(value="")
+        self.email_subject = tk.StringVar(value="Laporan Wi-Fi {date}")
+        self.email_attach_excel = tk.BooleanVar(value=True)
+        self.email_attach_pdf = tk.BooleanVar(value=True)
+        self.email_weekdays = [tk.BooleanVar(value=False) for _ in range(7)]
+        self.email_dates = tk.StringVar(value="")
 
         self._build_ui()
         self._load_existing_config()
@@ -70,9 +84,11 @@ class WifiMonitorApp(tk.Tk):
 
         config_tab = ttk.Frame(notebook, padding=14)
         run_tab = ttk.Frame(notebook, padding=14)
+        email_tab = ttk.Frame(notebook, padding=14)
         help_tab = ttk.Frame(notebook, padding=14)
         notebook.add(config_tab, text="1. Konfigurasi")
         notebook.add(run_tab, text="2. Jadwal & Tes")
+        notebook.add(email_tab, text="3. Email")
         notebook.add(help_tab, text="Bantuan")
 
         intro = ttk.Label(
@@ -218,6 +234,8 @@ class WifiMonitorApp(tk.Tk):
         self.status = tk.Text(status_box, height=11, state=tk.DISABLED, wrap="word")
         self.status.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
+        self._build_email_tab(email_tab)
+
         help_text = tk.Text(help_tab, height=20, state=tk.NORMAL, wrap="word")
         help_text.pack(fill=tk.BOTH, expand=True)
         help_text.insert(
@@ -240,11 +258,84 @@ class WifiMonitorApp(tk.Tk):
             "3. Isi tanggal mulai aktif, durasi hari, atau tanggal sampai aktif jika jadwal hanya sementara.\n"
             "4. Klik Pasang Jadwal.\n"
             "5. Klik Cek Jadwal untuk memastikan scheduler OS sudah aktif.\n\n"
+            "Email laporan:\n"
+            "1. Buka tab 3. Email.\n"
+            "2. Aktifkan kirim email laporan, isi SMTP, email tujuan, dan jadwal hari/tanggal.\n"
+            "3. Email dikirim setelah run final dan laporan berhasil dibuat, sebelum shutdown otomatis.\n\n"
             "Shutdown:\n"
             "Komputer hanya akan shutdown setelah run final berhasil jika checkbox Shutdown setelah run final berhasil dicentang.\n\n"
             "Jika SSID tidak ditemukan atau password salah, aplikasi tetap membuat laporan dengan status GAGAL, Tipe Error, dan Keterangan.",
         )
         help_text.configure(state=tk.DISABLED)
+
+    def _build_email_tab(self, email_tab: ttk.Frame) -> None:
+        intro = ttk.Label(
+            email_tab,
+            text="Opsional: kirim laporan setelah run final selesai, sebelum shutdown otomatis dijalankan.",
+            wraplength=760,
+        )
+        intro.pack(fill=tk.X, pady=(0, 10))
+
+        smtp = ttk.LabelFrame(email_tab, text="SMTP")
+        smtp.pack(fill=tk.X)
+        smtp.columnconfigure(1, weight=1)
+        smtp.columnconfigure(3, weight=1)
+
+        ttk.Checkbutton(smtp, text="Aktifkan kirim email laporan", variable=self.email_enabled).grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=10, pady=8
+        )
+        ttk.Checkbutton(smtp, text="STARTTLS", variable=self.email_use_tls).grid(
+            row=0, column=2, sticky="w", padx=10, pady=8
+        )
+        ttk.Checkbutton(smtp, text="SSL", variable=self.email_use_ssl).grid(
+            row=0, column=3, sticky="w", padx=10, pady=8
+        )
+
+        ttk.Label(smtp, text="SMTP host").grid(row=1, column=0, sticky="w", padx=10, pady=6)
+        ttk.Entry(smtp, textvariable=self.email_smtp_host).grid(row=1, column=1, sticky="ew", padx=10, pady=6)
+        ttk.Label(smtp, text="Port").grid(row=1, column=2, sticky="w", padx=10, pady=6)
+        self._number_with_unit(smtp, self.email_smtp_port, "", 1, 65535).grid(
+            row=1, column=3, sticky="w", padx=10, pady=6
+        )
+
+        ttk.Label(smtp, text="Username").grid(row=2, column=0, sticky="w", padx=10, pady=6)
+        ttk.Entry(smtp, textvariable=self.email_username).grid(row=2, column=1, sticky="ew", padx=10, pady=6)
+        ttk.Label(smtp, text="Password").grid(row=2, column=2, sticky="w", padx=10, pady=6)
+        ttk.Entry(smtp, textvariable=self.email_password, show="*").grid(row=2, column=3, sticky="ew", padx=10, pady=6)
+
+        message = ttk.LabelFrame(email_tab, text="Pesan dan lampiran")
+        message.pack(fill=tk.X, pady=(14, 0))
+        message.columnconfigure(1, weight=1)
+
+        ttk.Label(message, text="Dari").grid(row=0, column=0, sticky="w", padx=10, pady=6)
+        ttk.Entry(message, textvariable=self.email_from).grid(row=0, column=1, sticky="ew", padx=10, pady=6)
+        ttk.Label(message, text="Tujuan").grid(row=1, column=0, sticky="w", padx=10, pady=6)
+        ttk.Entry(message, textvariable=self.email_to).grid(row=1, column=1, sticky="ew", padx=10, pady=6)
+        ttk.Label(message, text="Subject").grid(row=2, column=0, sticky="w", padx=10, pady=6)
+        ttk.Entry(message, textvariable=self.email_subject).grid(row=2, column=1, sticky="ew", padx=10, pady=6)
+        ttk.Checkbutton(message, text="Lampirkan Excel bulanan", variable=self.email_attach_excel).grid(
+            row=3, column=0, sticky="w", padx=10, pady=6
+        )
+        ttk.Checkbutton(message, text="Lampirkan PDF harian", variable=self.email_attach_pdf).grid(
+            row=3, column=1, sticky="w", padx=10, pady=6
+        )
+
+        timing = ttk.LabelFrame(email_tab, text="Kapan dikirim")
+        timing.pack(fill=tk.X, pady=(14, 0))
+        ttk.Label(timing, text="Hari final").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+        weekday_frame = ttk.Frame(timing)
+        weekday_frame.grid(row=0, column=1, sticky="w", padx=10, pady=8)
+        for index, name in enumerate(("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")):
+            ttk.Checkbutton(weekday_frame, text=name, variable=self.email_weekdays[index]).pack(side=tk.LEFT, padx=(0, 8))
+
+        ttk.Label(timing, text="Tanggal khusus").grid(row=1, column=0, sticky="w", padx=10, pady=6)
+        ttk.Entry(timing, textvariable=self.email_dates).grid(row=1, column=1, sticky="ew", padx=10, pady=6)
+        timing.columnconfigure(1, weight=1)
+        ttk.Label(
+            timing,
+            text="Pisahkan dengan koma. Contoh: 2026-07-22, 2026-08-22, 2026-09-22. Jika hari dan tanggal kosong, email dikirim setiap run final.",
+            wraplength=740,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(4, 8))
 
     def _number_with_unit(
         self,
@@ -286,6 +377,23 @@ class WifiMonitorApp(tk.Tk):
         self.schedule_active_start_date.set(str(schedule.get("active_start_date") or date.today().isoformat()))
         self.schedule_active_days.set(int(schedule.get("active_days", 0)))
         self.schedule_active_until_date.set(str(schedule.get("active_until_date", "")))
+        email = config.get("email_report") or {}
+        self.email_enabled.set(bool(email.get("enabled", False)))
+        self.email_smtp_host.set(str(email.get("smtp_host", "")))
+        self.email_smtp_port.set(int(email.get("smtp_port", 587)))
+        self.email_use_tls.set(bool(email.get("use_tls", True)))
+        self.email_use_ssl.set(bool(email.get("use_ssl", False)))
+        self.email_username.set(str(email.get("username", "")))
+        self.email_password.set(str(email.get("password", "")))
+        self.email_from.set(str(email.get("from", "")))
+        self.email_to.set(str(email.get("to", "")))
+        self.email_subject.set(str(email.get("subject", "Laporan Wi-Fi {date}")))
+        self.email_attach_excel.set(bool(email.get("attach_excel", True)))
+        self.email_attach_pdf.set(bool(email.get("attach_pdf", True)))
+        weekdays = {int(day) for day in email.get("weekdays", []) if str(day).strip() != ""}
+        for index, variable in enumerate(self.email_weekdays):
+            variable.set(index in weekdays)
+        self.email_dates.set(", ".join(str(item) for item in email.get("dates", [])))
 
         for profile in config.get("wifi_profiles", []):
             self._add_profile(profile)
@@ -374,8 +482,46 @@ class WifiMonitorApp(tk.Tk):
             "shutdown_after_final": bool(self.shutdown_after_final.get()),
             "shutdown_delay_seconds": int(self.shutdown_delay.get()),
             "schedule": self._collect_schedule(),
+            "email_report": self._collect_email_report(),
             "wifi_profiles": profiles,
         }
+
+    def _collect_email_report(self) -> dict[str, Any]:
+        raw_dates = [item.strip() for item in self.email_dates.get().replace(";", ",").split(",") if item.strip()]
+        for value in raw_dates:
+            parse_date(value)
+
+        email = {
+            "enabled": bool(self.email_enabled.get()),
+            "send_after_final": True,
+            "smtp_host": self.email_smtp_host.get().strip(),
+            "smtp_port": int(self.email_smtp_port.get()),
+            "use_tls": bool(self.email_use_tls.get()),
+            "use_ssl": bool(self.email_use_ssl.get()),
+            "username": self.email_username.get().strip(),
+            "password": self.email_password.get(),
+            "from": self.email_from.get().strip(),
+            "to": self.email_to.get().strip(),
+            "subject": self.email_subject.get().strip() or "Laporan Wi-Fi {date}",
+            "attach_excel": bool(self.email_attach_excel.get()),
+            "attach_pdf": bool(self.email_attach_pdf.get()),
+            "weekdays": [index for index, variable in enumerate(self.email_weekdays) if variable.get()],
+            "dates": raw_dates,
+        }
+
+        if email["enabled"]:
+            if not email["smtp_host"]:
+                raise ValueError("SMTP host wajib diisi jika kirim email aktif.")
+            if not email["from"] and not email["username"]:
+                raise ValueError("Email pengirim atau username wajib diisi jika kirim email aktif.")
+            if not email["to"]:
+                raise ValueError("Email tujuan wajib diisi jika kirim email aktif.")
+            if not email["attach_excel"] and not email["attach_pdf"]:
+                raise ValueError("Minimal pilih satu lampiran email: Excel atau PDF.")
+            if email["use_ssl"] and email["use_tls"]:
+                raise ValueError("Pilih salah satu: STARTTLS atau SSL, jangan keduanya.")
+
+        return email
 
     def _collect_schedule(self) -> dict[str, Any]:
         final_time = self.schedule_final_time.get().strip()

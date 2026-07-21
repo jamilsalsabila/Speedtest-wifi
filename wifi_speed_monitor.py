@@ -4,15 +4,18 @@ import argparse
 import csv
 import json
 import logging
+import mimetypes
 import os
 import platform
 import re
 import shutil
+import smtplib
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +59,7 @@ ERROR_NOT_CONNECTED = "NOT_CONNECTED"
 ERROR_NO_INTERNET = "NO_INTERNET"
 ERROR_SPEEDTEST_FAILED = "SPEEDTEST_FAILED"
 ERROR_REPORT_FAILED = "REPORT_FAILED"
+ERROR_EMAIL_FAILED = "EMAIL_FAILED"
 ERROR_UNKNOWN = "UNKNOWN"
 
 
@@ -1124,6 +1128,127 @@ def shutdown_computer(delay_seconds: int = 30) -> None:
         raise RuntimeError(f"Shutdown belum didukung untuk OS: {platform.system()}")
 
 
+def maybe_send_email_report(
+    config: dict[str, Any],
+    report_date: date,
+    attachments: list[Path],
+    result_callback: Any | None = None,
+) -> bool:
+    email_config = config.get("email_report") or {}
+    if not bool(email_config.get("enabled", False)):
+        return True
+
+    if not bool(email_config.get("send_after_final", True)):
+        logging.info("Email laporan aktif, tetapi send_after_final nonaktif.")
+        return True
+
+    if not email_report_due(email_config, report_date):
+        logging.info("Email laporan dilewati karena tanggal %s tidak sesuai jadwal kirim.", report_date.isoformat())
+        return True
+
+    try:
+        send_email_report(email_config, report_date, attachments)
+        message = f"Email laporan berhasil dikirim ke {', '.join(parse_recipients(str(email_config.get('to', ''))))}."
+        logging.info(message)
+        if result_callback is not None:
+            result_callback({"status": "INFO", "wifi": "Email", "error": message})
+        return True
+    except Exception:
+        logging.exception("Gagal mengirim email laporan.")
+        if result_callback is not None:
+            result_callback({"status": "INFO", "wifi": "Email", "error": "Gagal mengirim email laporan. Cek logs/monitor.log."})
+        return False
+
+
+def email_report_due(email_config: dict[str, Any], report_date: date) -> bool:
+    weekdays = {int(day) for day in email_config.get("weekdays", []) if str(day).strip() != ""}
+    dates = {str(item).strip() for item in email_config.get("dates", []) if str(item).strip()}
+
+    if report_date.isoformat() in dates:
+        return True
+    if report_date.weekday() in weekdays:
+        return True
+    return not weekdays and not dates
+
+
+def send_email_report(email_config: dict[str, Any], report_date: date, attachments: list[Path]) -> None:
+    host = str(email_config.get("smtp_host", "")).strip()
+    port = int(email_config.get("smtp_port", 587))
+    username = str(email_config.get("username", "")).strip()
+    password = str(email_config.get("password", ""))
+    sender = str(email_config.get("from", "")).strip() or username
+    recipients = parse_recipients(str(email_config.get("to", "")))
+    subject_template = str(email_config.get("subject", "Laporan Wi-Fi {date}"))
+
+    if not host:
+        raise WifiMonitorError(ERROR_EMAIL_FAILED, "SMTP host belum diisi.")
+    if not sender:
+        raise WifiMonitorError(ERROR_EMAIL_FAILED, "Email pengirim belum diisi.")
+    if not recipients:
+        raise WifiMonitorError(ERROR_EMAIL_FAILED, "Email tujuan belum diisi.")
+
+    selected = [path for path in attachments if path.exists()]
+    if not selected:
+        raise WifiMonitorError(ERROR_EMAIL_FAILED, "Tidak ada file laporan yang bisa dilampirkan.")
+
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = ", ".join(recipients)
+    message["Subject"] = format_email_subject(subject_template, report_date)
+    message.set_content(
+        "Terlampir laporan Wi-Fi Speed Monitor.\n\n"
+        f"Tanggal laporan: {report_date.isoformat()}\n"
+    )
+
+    for path in selected:
+        content_type, _encoding = mimetypes.guess_type(path.name)
+        maintype, subtype = (content_type or "application/octet-stream").split("/", 1)
+        message.add_attachment(path.read_bytes(), maintype=maintype, subtype=subtype, filename=path.name)
+
+    use_ssl = bool(email_config.get("use_ssl", False))
+    use_tls = bool(email_config.get("use_tls", True))
+
+    if use_ssl:
+        with smtplib.SMTP_SSL(host, port, timeout=60) as smtp:
+            login_smtp(smtp, username, password)
+            smtp.send_message(message)
+    else:
+        with smtplib.SMTP(host, port, timeout=60) as smtp:
+            smtp.ehlo()
+            if use_tls:
+                smtp.starttls()
+                smtp.ehlo()
+            login_smtp(smtp, username, password)
+            smtp.send_message(message)
+
+
+def login_smtp(smtp: smtplib.SMTP, username: str, password: str) -> None:
+    if username or password:
+        smtp.login(username, password)
+
+
+def parse_recipients(value: str) -> list[str]:
+    return [item.strip() for item in re.split(r"[;,]", value) if item.strip()]
+
+
+def format_email_subject(template: str, report_date: date) -> str:
+    try:
+        return template.format(date=report_date.isoformat())
+    except Exception:
+        logging.warning("Format subject email tidak valid: %s", template)
+        return f"Laporan Wi-Fi {report_date.isoformat()}"
+
+
+def selected_email_attachments(config: dict[str, Any], excel_report: Path, pdf_report: Path) -> list[Path]:
+    email_config = config.get("email_report") or {}
+    attachments = []
+    if bool(email_config.get("attach_excel", True)):
+        attachments.append(excel_report)
+    if bool(email_config.get("attach_pdf", True)):
+        attachments.append(pdf_report)
+    return attachments
+
+
 def should_skip_for_schedule_lifecycle(config: dict[str, Any], result_callback: Any | None = None) -> bool:
     schedule = config.get("schedule") or {}
     if not schedule:
@@ -1241,22 +1366,26 @@ def run_monitor(
             logging.exception("Gagal mengembalikan koneksi awal.")
 
     reports_ok = False
+    email_ok = True
     try:
         rows = read_rows()
         now = datetime.now()
-        write_excel(rows, now.strftime("%Y-%m"))
-        write_daily_pdf(rows, now.strftime("%Y-%m-%d"))
+        excel_report = write_excel(rows, now.strftime("%Y-%m"))
+        pdf_report = write_daily_pdf(rows, now.strftime("%Y-%m-%d"))
         reports_ok = True
+        if final:
+            attachments = selected_email_attachments(config, excel_report, pdf_report)
+            email_ok = maybe_send_email_report(config, now.date(), attachments, result_callback)
     except Exception:
         logging.exception("Gagal membuat laporan Excel/PDF.")
 
     if final and bool(config.get("shutdown_after_final", False)):
-        if all_tests_ok and reports_ok:
+        if all_tests_ok and reports_ok and email_ok:
             shutdown_computer(int(config.get("shutdown_delay_seconds", 30)))
         else:
-            logging.error("Shutdown dibatalkan karena tes atau penyimpanan laporan gagal.")
+            logging.error("Shutdown dibatalkan karena tes, laporan, atau email gagal.")
 
-    return 0 if all_tests_ok and reports_ok else 1
+    return 0 if all_tests_ok and reports_ok and email_ok else 1
 
 
 def main() -> int:

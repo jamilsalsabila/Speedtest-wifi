@@ -10,6 +10,7 @@ Daftar Wi-Fi bisa diisi lewat GUI atau file `config.json`.
 ## Fitur
 
 - GUI untuk mengisi nama komputer, SSID, password, nama di laporan, jadwal tes, dan opsi shutdown.
+- Tab email opsional untuk mengirim laporan setelah run final pada hari atau tanggal tertentu.
 - CLI untuk dijalankan manual atau lewat scheduler.
 - Koneksi Wi-Fi lintas OS:
   - Windows: `netsh`
@@ -126,6 +127,23 @@ Alternatifnya, salin `config.example.json` menjadi `config.json` dan edit isinya
     "active_days": 0,
     "active_until_date": ""
   },
+  "email_report": {
+    "enabled": false,
+    "send_after_final": true,
+    "smtp_host": "smtp.example.com",
+    "smtp_port": 587,
+    "use_tls": true,
+    "use_ssl": false,
+    "username": "user@example.com",
+    "password": "app-password",
+    "from": "user@example.com",
+    "to": "tujuan@example.com",
+    "subject": "Laporan Wi-Fi {date}",
+    "attach_excel": true,
+    "attach_pdf": true,
+    "weekdays": [5],
+    "dates": ["2026-07-22", "2026-08-22", "2026-09-22"]
+  },
   "wifi_profiles": [
     {
       "ssid": "Nama WiFi",
@@ -166,6 +184,22 @@ Shutdown hanya dijalankan pada `--final` jika `shutdown_after_final` bernilai
 `true` dan semua tes serta laporan berhasil.
 Jika checkbox `Shutdown setelah run final berhasil` tidak dicentang di GUI,
 komputer tidak akan shutdown.
+
+## Email Laporan
+
+Email laporan bersifat opsional dan diatur dari tab `3. Email`. Jika aktif,
+aplikasi akan mengirim laporan setelah run final dan setelah Excel/PDF berhasil
+dibuat. Pengiriman dilakukan sebelum shutdown otomatis.
+
+Jadwal kirim bisa dibatasi dengan:
+
+- Hari final, misalnya centang `Sab` untuk setiap Sabtu.
+- Tanggal khusus, misalnya `2026-07-22, 2026-08-22, 2026-09-22`.
+
+Jika hari dan tanggal khusus kosong, email dikirim setiap run final. Lampiran
+default adalah Excel bulanan dan PDF harian. Gunakan app password SMTP jika
+provider email membutuhkannya. Password email tersimpan di `config.json` sebagai
+teks biasa, jadi simpan folder aplikasi hanya di komputer yang berwenang.
 
 ## Memasang Jadwal
 
