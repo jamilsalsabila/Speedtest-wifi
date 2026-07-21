@@ -3,7 +3,18 @@ from __future__ import annotations
 import json
 import platform
 import queue
+import sys
 import threading
+
+if "--monitor" in sys.argv:
+    from wifi_speed_monitor import main as monitor_main
+
+    monitor_args = ["wifi_speed_monitor.py"]
+    if "--final" in sys.argv:
+        monitor_args.append("--final")
+    sys.argv = monitor_args
+    raise SystemExit(monitor_main())
+
 import tkinter as tk
 from datetime import date, datetime, timedelta
 from tkinter import messagebox, ttk

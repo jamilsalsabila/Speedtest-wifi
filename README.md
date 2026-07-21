@@ -39,6 +39,24 @@ python -m venv .venv
 .\.venv\Scripts\python.exe wifi_speed_gui.py
 ```
 
+### Windows EXE
+
+File `.exe` dibuat otomatis oleh GitHub Actions pada workflow `Build Windows EXE`.
+Cara mengambilnya:
+
+1. Buka tab **Actions** di repository GitHub.
+2. Pilih workflow **Build Windows EXE** yang terbaru.
+3. Download artifact **WiFiSpeedMonitor-Windows**.
+4. Extract file zip, lalu jalankan `WiFiSpeedMonitor.exe`.
+
+Jika ingin build lokal di Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_windows_exe.ps1
+```
+
+Hasilnya ada di `package\WiFiSpeedMonitor.exe`.
+
 ### Linux / macOS
 
 ```bash
@@ -180,6 +198,9 @@ sebelumnya jadwal pernah dibuat sebelum `.venv` siap, klik `Pasang Jadwal`
 ulang agar path Python di scheduler diperbarui.
 Di Windows, scheduler memakai `pythonw.exe` jika tersedia supaya jendela
 terminal tidak muncul saat jadwal berjalan.
+Jika aplikasi dijalankan dari `WiFiSpeedMonitor.exe`, scheduler Windows akan
+menjalankan EXE yang sama dengan argumen `--monitor`, jadi Python tidak perlu
+dibuka lewat terminal.
 
 Jika jadwal sudah tidak dibutuhkan, klik `Hapus Jadwal` di GUI. Aplikasi hanya
 menghapus jadwal milik Wi-Fi Speed Monitor:

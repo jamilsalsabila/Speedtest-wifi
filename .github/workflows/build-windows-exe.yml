@@ -1,0 +1,42 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build EXE
+        run: |
+          pyinstaller --onefile --windowed --name WiFiSpeedMonitor wifi_speed_gui.py
+
+      - name: Prepare package
+        run: |
+          New-Item -ItemType Directory -Force package
+          Copy-Item dist\WiFiSpeedMonitor.exe package\
+          Copy-Item config.example.json package\
+          Copy-Item README.md package\
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WiFiSpeedMonitor-Windows
+          path: package
