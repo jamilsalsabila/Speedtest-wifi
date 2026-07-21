@@ -24,7 +24,39 @@ LEGACY_MACOS_LAUNCH_AGENT_LABELS.append(MACOS_FINAL_LAUNCH_AGENT_LABEL)
 
 
 def run(args: list[str], input_text: str | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, input=input_text, capture_output=True, text=True, check=False)
+    return subprocess.run(
+        args,
+        input=input_text,
+        capture_output=True,
+        text=True,
+        check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+
+
+def command_output(result: subprocess.CompletedProcess[str]) -> str:
+    return (result.stderr or "").strip() or (result.stdout or "").strip()
+
+
+def command_stdout_lines(result: subprocess.CompletedProcess[str]) -> list[str]:
+    return (result.stdout or "").splitlines()
+
+
+def scheduler_error(result: subprocess.CompletedProcess[str]) -> RuntimeError:
+    output = command_output(result)
+    if platform.system().lower() == "windows" and is_access_denied(output):
+        output = (
+            f"{output}\n\n"
+            "Windows menolak akses ke Task Scheduler. Jalankan WiFiSpeedMonitor.exe "
+            "atau terminal Python dengan klik kanan lalu Run as administrator, "
+            "kemudian klik Pasang Jadwal lagi."
+        )
+    return RuntimeError(output)
+
+
+def is_access_denied(output: str) -> bool:
+    text = output.lower()
+    return "access is denied" in text or "access denied" in text or "akses ditolak" in text
 
 
 def scheduler_python() -> Path:
@@ -87,7 +119,7 @@ def install_windows(times: list[str], final_time: str | None) -> None:
             "/F",
         ])
         if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+            raise scheduler_error(result)
 
     if final_time:
         command = quote_command(scheduler_command(final=True))
@@ -105,7 +137,7 @@ def install_windows(times: list[str], final_time: str | None) -> None:
             "/F",
         ])
         if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+            raise scheduler_error(result)
 
 
 def install_macos(times: list[str], final_time: str | None) -> None:
@@ -157,12 +189,12 @@ def install_macos(times: list[str], final_time: str | None) -> None:
         unload_macos_launch_agent(label, plist)
         result = load_macos_launch_agent(label, plist)
         if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+            raise scheduler_error(result)
 
 
 def install_linux(times: list[str], final_time: str | None) -> None:
     current = run(["crontab", "-l"])
-    lines = [] if current.returncode != 0 else current.stdout.splitlines()
+    lines = [] if current.returncode != 0 else command_stdout_lines(current)
     lines = [line for line in lines if "# wifi-speed-monitor" not in line]
 
     for time_value in times:
@@ -181,7 +213,7 @@ def install_linux(times: list[str], final_time: str | None) -> None:
 
     result = run(["crontab", "-"], input_text="\n".join(lines) + "\n")
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+        raise scheduler_error(result)
 
 
 def uninstall_windows() -> None:
@@ -189,11 +221,18 @@ def uninstall_windows() -> None:
     task_names = windows_app_task_names() or LEGACY_WINDOWS_TASK_NAMES
     for task_name in task_names:
         result = run(["schtasks", "/Delete", "/TN", task_name, "/F"])
-        output = result.stderr.strip() or result.stdout.strip()
+        output = command_output(result)
         if result.returncode != 0 and output and "cannot find" not in output.lower():
             errors.append(output)
     if errors:
-        raise RuntimeError("\n".join(errors))
+        output = "\n".join(errors)
+        if is_access_denied(output):
+            raise RuntimeError(
+                f"{output}\n\n"
+                "Windows menolak akses saat menghapus task lama. Jalankan aplikasi "
+                "dengan Run as administrator, lalu klik Pasang Jadwal atau Hapus Jadwal lagi."
+            )
+        raise RuntimeError(output)
 
 
 def uninstall_macos() -> None:
@@ -203,7 +242,7 @@ def uninstall_macos() -> None:
     for label in labels:
         plist = launch_agents / f"local.{label}.plist"
         unload = unload_macos_launch_agent(label, plist)
-        output = unload.stderr.strip() or unload.stdout.strip()
+        output = command_output(unload)
         if unload.returncode != 0 and plist.exists() and output and not is_missing_macos_service(output):
             errors.append(output)
         plist.unlink(missing_ok=True)
@@ -258,13 +297,13 @@ def uninstall_linux() -> None:
     if current.returncode != 0:
         return
 
-    lines = [line for line in current.stdout.splitlines() if "# wifi-speed-monitor" not in line]
+    lines = [line for line in command_stdout_lines(current) if "# wifi-speed-monitor" not in line]
     if lines:
         result = run(["crontab", "-"], input_text="\n".join(lines) + "\n")
     else:
         result = run(["crontab", "-r"])
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+        raise scheduler_error(result)
 
 
 def parse_time(value: str) -> tuple[int, int]:
@@ -401,7 +440,7 @@ def windows_app_task_names() -> list[str]:
         return []
 
     task_names = []
-    for row in csv.reader(result.stdout.splitlines()):
+    for row in csv.reader(command_stdout_lines(result)):
         if not row:
             continue
         task_name = windows_task_basename(row[0])
@@ -483,7 +522,7 @@ def linux_schedule_status() -> dict[str, object]:
     current = run(["crontab", "-l"])
     installed = []
     if current.returncode == 0:
-        installed = [line for line in current.stdout.splitlines() if "# wifi-speed-monitor" in line]
+        installed = [line for line in command_stdout_lines(current) if "# wifi-speed-monitor" in line]
     return {
         "os": "Linux",
         "installed_count": len(installed),

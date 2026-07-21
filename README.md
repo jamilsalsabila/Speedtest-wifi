@@ -201,6 +201,10 @@ terminal tidak muncul saat jadwal berjalan.
 Jika aplikasi dijalankan dari `WiFiSpeedMonitor.exe`, scheduler Windows akan
 menjalankan EXE yang sama dengan argumen `--monitor`, jadi Python tidak perlu
 dibuka lewat terminal.
+Jika `Pasang Jadwal` menampilkan `Access denied`, jalankan aplikasi dengan
+klik kanan **Run as administrator** lalu pasang jadwal ulang. Ini biasanya
+terjadi jika task lama dibuat oleh Administrator, user lain, atau dibatasi
+policy Windows.
 
 Jika jadwal sudah tidak dibutuhkan, klik `Hapus Jadwal` di GUI. Aplikasi hanya
 menghapus jadwal milik Wi-Fi Speed Monitor:
