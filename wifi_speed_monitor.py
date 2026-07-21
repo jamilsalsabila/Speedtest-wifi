@@ -33,6 +33,7 @@ DATA_DIR = BASE_DIR / "data"
 REPORT_DIR = BASE_DIR / "reports"
 LOG_DIR = BASE_DIR / "logs"
 CSV_FILE = DATA_DIR / "speedtest_log.csv"
+_STANDARD_STREAM_REFS: list[Any] = []
 
 HEADERS = [
     "tanggal",
@@ -704,6 +705,7 @@ def is_connected_to(ssid: str) -> bool:
 
 
 def perform_speedtest() -> dict[str, float]:
+    ensure_standard_streams()
     try:
         import speedtest
     except ImportError as exc:
@@ -726,6 +728,16 @@ def perform_speedtest() -> dict[str, float]:
         "upload_mbps": round(float(data.get("upload", upload)) / 1_000_000, 2),
         "ping_ms": round(float(data.get("ping", 0)), 2),
     }
+
+
+def ensure_standard_streams() -> None:
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is not None:
+            continue
+        replacement = open(os.devnull, "w", encoding="utf-8")
+        setattr(sys, stream_name, replacement)
+        _STANDARD_STREAM_REFS.append(replacement)
 
 
 def speedtest_env() -> dict[str, str]:
