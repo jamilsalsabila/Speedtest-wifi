@@ -714,7 +714,22 @@ def perform_speedtest() -> dict[str, float]:
         error_type = ERROR_NO_INTERNET if "urlopen error" in message.lower() else ERROR_SPEEDTEST_FAILED
         raise WifiMonitorError(error_type, message)
 
-    data = json.loads(result.stdout or "{}")
+    raw_output = result.stdout or "{}"
+    try:
+        data = json.loads(raw_output)
+    except json.JSONDecodeError as exc:
+        raise WifiMonitorError(ERROR_SPEEDTEST_FAILED, f"Output speedtest bukan JSON valid: {raw_output[:500]}") from exc
+
+    missing = [key for key in ("download", "upload") if key not in data]
+    if missing:
+        logging.error("Respons speedtest tidak lengkap: %s", raw_output[:1000])
+        detail = data.get("error") or data.get("message") or raw_output[:500]
+        error_type = ERROR_NO_INTERNET if "urlopen error" in str(detail).lower() else ERROR_SPEEDTEST_FAILED
+        raise WifiMonitorError(
+            error_type,
+            f"Respons speedtest tidak memiliki field {', '.join(missing)}. Detail: {detail}",
+        )
+
     return {
         "download_mbps": round(float(data["download"]) / 1_000_000, 2),
         "upload_mbps": round(float(data["upload"]) / 1_000_000, 2),
