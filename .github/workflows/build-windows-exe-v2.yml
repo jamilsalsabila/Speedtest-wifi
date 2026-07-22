@@ -1,0 +1,43 @@
+name: Build Windows EXE V2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: v2-ookla-cli
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build EXE
+        run: |
+          pyinstaller --onefile --windowed --hidden-import speedtest --name WiFiSpeedMonitorV2 wifi_speed_gui.py
+
+      - name: Prepare package
+        run: |
+          New-Item -ItemType Directory -Force package
+          Copy-Item dist\WiFiSpeedMonitorV2.exe package\
+          Copy-Item config.example.json package\
+          Copy-Item README.md package\
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WiFiSpeedMonitorV2-Windows
+          path: v2-ookla-cli/package

@@ -1,0 +1,48 @@
+{
+  "computer_name": "Komputer 1",
+  "settle_seconds": 20,
+  "gap_between_tests_seconds": 20,
+  "connection_retries": 2,
+  "restore_connection_after_tests": true,
+  "test_current_connection": false,
+  "current_connection_label": "Ethernet / Koneksi Aktif",
+  "speedtest_backend": "speedtest_cli",
+  "ookla_cli_path": "",
+  "ookla_server_id": "",
+  "shutdown_after_final": false,
+  "shutdown_delay_seconds": 30,
+  "schedule": {
+    "enabled": true,
+    "start_time": "08:30",
+    "end_time": "20:30",
+    "frequency_minutes": 60,
+    "final_time": "21:00",
+    "active_start_date": "2026-07-20",
+    "active_days": 0,
+    "active_until_date": ""
+  },
+  "email_report": {
+    "enabled": false,
+    "send_after_final": true,
+    "smtp_host": "smtp.example.com",
+    "smtp_port": 587,
+    "use_tls": true,
+    "use_ssl": false,
+    "username": "user@example.com",
+    "password": "app-password",
+    "from": "user@example.com",
+    "to": "tujuan@example.com",
+    "subject": "Laporan Wi-Fi {date}",
+    "attach_excel": true,
+    "attach_pdf": true,
+    "weekdays": [5],
+    "dates": ["2026-07-22", "2026-08-22", "2026-09-22"]
+  },
+  "wifi_profiles": [
+    {
+      "ssid": "Nama WiFi",
+      "password": "password-wifi",
+      "label": "Nama WiFi"
+    }
+  ]
+}
