@@ -895,9 +895,9 @@ def sort_report_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     return sorted(rows, key=lambda r: (r.get("tanggal", ""), r.get("waktu", ""), r.get("wifi", "")))
 
 
-def write_excel(rows: list[dict[str, str]], month_key: str) -> Path:
-    output = REPORT_DIR / f"laporan_wifi_{month_key}.xlsx"
-    selected = sort_report_rows([r for r in rows if r["tanggal"].startswith(month_key)])
+def write_excel(rows: list[dict[str, str]], date_key: str) -> Path:
+    output = REPORT_DIR / f"laporan_wifi_{date_key}.xlsx"
+    selected = sort_report_rows([r for r in rows if r["tanggal"] == date_key])
 
     wb = Workbook()
     ws = wb.active
@@ -1504,8 +1504,9 @@ def run_monitor(
     try:
         rows = read_rows()
         now = datetime.now()
-        excel_report = write_excel(rows, now.strftime("%Y-%m"))
-        pdf_report = write_daily_pdf(rows, now.strftime("%Y-%m-%d"))
+        report_date = now.strftime("%Y-%m-%d")
+        excel_report = write_excel(rows, report_date)
+        pdf_report = write_daily_pdf(rows, report_date)
         reports_ok = True
         if final:
             attachments = selected_email_attachments(config, excel_report, pdf_report)

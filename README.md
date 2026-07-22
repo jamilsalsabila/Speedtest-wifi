@@ -1,7 +1,7 @@
 # Wi-Fi Speed Monitor
 
 Aplikasi untuk menjalankan speedtest Wi-Fi secara manual atau terjadwal di
-Windows, Linux, dan macOS. Hasil tes disimpan sebagai CSV, laporan Excel bulanan,
+Windows, Linux, dan macOS. Hasil tes disimpan sebagai CSV, laporan Excel harian,
 PDF harian, dan log aplikasi.
 
 Versi baru ini tidak lagi terikat ke nama cafe, SSID, atau password tertentu.
@@ -18,7 +18,7 @@ Daftar Wi-Fi bisa diisi lewat GUI atau file `config.json`.
   - macOS: `networksetup`
 - Output:
   - `data/speedtest_log.csv`
-  - `reports/laporan_wifi_YYYY-MM.xlsx`
+  - `reports/laporan_wifi_YYYY-MM-DD.xlsx`
   - `reports/laporan_wifi_YYYY-MM-DD.pdf`
   - `logs/monitor.log`
 
@@ -229,7 +229,7 @@ Jadwal kirim bisa dibatasi dengan:
 - Tanggal khusus, misalnya `2026-07-22, 2026-08-22, 2026-09-22`.
 
 Jika hari dan tanggal khusus kosong, email dikirim setiap run final. Lampiran
-default adalah Excel bulanan dan PDF harian. Gunakan app password SMTP jika
+default adalah Excel harian dan PDF harian. Gunakan app password SMTP jika
 provider email membutuhkannya. Password email tersimpan di `config.json` sebagai
 teks biasa, jadi simpan folder aplikasi hanya di komputer yang berwenang.
 

@@ -344,7 +344,7 @@ class WifiMonitorApp(tk.Tk):
         ttk.Entry(message, textvariable=self.email_to).grid(row=1, column=1, sticky="ew", padx=10, pady=6)
         ttk.Label(message, text="Subject").grid(row=2, column=0, sticky="w", padx=10, pady=6)
         ttk.Entry(message, textvariable=self.email_subject).grid(row=2, column=1, sticky="ew", padx=10, pady=6)
-        ttk.Checkbutton(message, text="Lampirkan Excel bulanan", variable=self.email_attach_excel).grid(
+        ttk.Checkbutton(message, text="Lampirkan Excel harian", variable=self.email_attach_excel).grid(
             row=3, column=0, sticky="w", padx=10, pady=6
         )
         ttk.Checkbutton(message, text="Lampirkan PDF harian", variable=self.email_attach_pdf).grid(
