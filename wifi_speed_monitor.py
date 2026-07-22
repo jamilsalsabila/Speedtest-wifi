@@ -159,8 +159,8 @@ def load_config(config_file: Path = CONFIG_FILE) -> dict[str, Any]:
 
     profiles = config.get("wifi_profiles") or []
     config["wifi_profiles"] = [profile.__dict__ for profile in map(WifiProfile.from_dict, profiles)]
-    if not config["wifi_profiles"]:
-        raise ValueError("wifi_profiles di config.json masih kosong.")
+    if not config["wifi_profiles"] and not bool(config.get("test_current_connection", False)):
+        raise ValueError("Isi minimal satu Wi-Fi atau aktifkan tes Ethernet/koneksi aktif.")
 
     return config
 
@@ -1316,14 +1316,23 @@ def run_monitor(
         logging.info("SSID awal sebelum tes: %s", initial_ssid or "tidak ada")
     all_tests_ok = True
 
-    for index, item in enumerate(config["wifi_profiles"]):
+    test_items: list[tuple[str, WifiProfile | None, str]] = []
+    if bool(config.get("test_current_connection", False)):
+        label = str(config.get("current_connection_label") or "Ethernet / Koneksi Aktif")
+        test_items.append(("current", None, label))
+    for item in config["wifi_profiles"]:
         profile = WifiProfile.from_dict(item)
+        test_items.append(("wifi", profile, profile.label or profile.ssid))
+
+    wifi_tests_run = any(kind == "wifi" for kind, _profile, _label in test_items)
+
+    for index, (kind, profile, label) in enumerate(test_items):
         now = datetime.now()
         row: dict[str, Any] = {
             "tanggal": now.strftime("%Y-%m-%d"),
             "waktu": now.strftime("%H:%M:%S"),
             "komputer": computer_name,
-            "wifi": profile.label or profile.ssid,
+            "wifi": label,
             "download_mbps": "",
             "upload_mbps": "",
             "ping_ms": "",
@@ -1333,14 +1342,17 @@ def run_monitor(
         }
 
         try:
-            connect_wifi(profile, settle_seconds, connection_retries)
+            if kind == "wifi" and profile is not None:
+                connect_wifi(profile, settle_seconds, connection_retries)
+            else:
+                logging.info("Menguji koneksi aktif tanpa mengganti Wi-Fi.")
             result = perform_speedtest()
             row.update(result)
             row["status"] = "OK"
             logging.info(
                 "%s / %s: download=%s upload=%s",
                 computer_name,
-                profile.label,
+                label,
                 row["download_mbps"],
                 row["upload_mbps"],
             )
@@ -1348,16 +1360,16 @@ def run_monitor(
             all_tests_ok = False
             row["error_type"] = getattr(exc, "error_type", ERROR_UNKNOWN)
             row["error"] = str(exc)
-            logging.exception("Pengujian gagal untuk %s", profile.label)
+            logging.exception("Pengujian gagal untuk %s", label)
 
         append_csv(row)
         if result_callback is not None:
             result_callback(dict(row))
 
-        if index < len(config["wifi_profiles"]) - 1:
+        if index < len(test_items) - 1:
             time.sleep(gap_seconds)
 
-    if restore_after_tests:
+    if restore_after_tests and wifi_tests_run:
         try:
             restore_wifi_connection(initial_ssid, config, settle_seconds, connection_retries)
             if result_callback is not None:

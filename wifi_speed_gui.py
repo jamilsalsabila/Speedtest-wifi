@@ -45,6 +45,8 @@ class WifiMonitorApp(tk.Tk):
         self.gap_seconds = tk.IntVar(value=20)
         self.connection_retries = tk.IntVar(value=2)
         self.restore_connection_after_tests = tk.BooleanVar(value=True)
+        self.test_current_connection = tk.BooleanVar(value=False)
+        self.current_connection_label = tk.StringVar(value="Ethernet / Koneksi Aktif")
         self.shutdown_after_final = tk.BooleanVar(value=False)
         self.shutdown_delay = tk.IntVar(value=30)
         self.schedule_enabled = tk.BooleanVar(value=True)
@@ -134,6 +136,15 @@ class WifiMonitorApp(tk.Tk):
             text="Kembalikan koneksi setelah tes",
             variable=self.restore_connection_after_tests,
         ).grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=8)
+
+        ttk.Checkbutton(
+            settings,
+            text="Tes Ethernet / koneksi aktif",
+            variable=self.test_current_connection,
+        ).grid(row=6, column=0, sticky="w", padx=10, pady=8)
+        ttk.Entry(settings, textvariable=self.current_connection_label).grid(
+            row=6, column=1, sticky="ew", padx=10, pady=8
+        )
 
         profiles = ttk.LabelFrame(config_tab, text="Langkah 2 - Daftar Wi-Fi")
         profiles.pack(fill=tk.BOTH, expand=True, pady=(14, 0))
@@ -245,9 +256,10 @@ class WifiMonitorApp(tk.Tk):
             "2. Isi Nama komputer.\n"
             "3. Isi waktu tunggu koneksi, jeda antar Wi-Fi, dan retry koneksi.\n"
             "   Biarkan Kembalikan koneksi setelah tes aktif jika komputer biasa memakai ethernet atau Wi-Fi lain.\n"
-            "4. Tambahkan SSID Wi-Fi, password, dan nama di laporan. Nama di laporan akan tampil di kolom Wi-Fi pada Excel/PDF.\n"
-            "5. Icon mata menampilkan password, icon mata dicoret menyembunyikan password kembali.\n"
-            "6. Klik Simpan Config.\n\n"
+            "4. Aktifkan Tes Ethernet / koneksi aktif jika ingin speedtest koneksi yang sedang dipakai tanpa pindah Wi-Fi.\n"
+            "5. Tambahkan SSID Wi-Fi, password, dan nama di laporan jika ingin tes Wi-Fi juga. Nama di laporan akan tampil di kolom Wi-Fi pada Excel/PDF.\n"
+            "6. Icon mata menampilkan password, icon mata dicoret menyembunyikan password kembali.\n"
+            "7. Klik Simpan Config.\n\n"
             "Tes manual:\n"
             "1. Buka tab 2. Jadwal & Tes.\n"
             "2. Klik Jalankan Tes Sekarang.\n"
@@ -366,6 +378,8 @@ class WifiMonitorApp(tk.Tk):
         self.gap_seconds.set(int(config.get("gap_between_tests_seconds", 20)))
         self.connection_retries.set(int(config.get("connection_retries", 2)))
         self.restore_connection_after_tests.set(bool(config.get("restore_connection_after_tests", True)))
+        self.test_current_connection.set(bool(config.get("test_current_connection", False)))
+        self.current_connection_label.set(str(config.get("current_connection_label") or "Ethernet / Koneksi Aktif"))
         self.shutdown_after_final.set(bool(config.get("shutdown_after_final", False)))
         self.shutdown_delay.set(int(config.get("shutdown_delay_seconds", 30)))
         schedule = config.get("schedule") or {}
@@ -470,8 +484,8 @@ class WifiMonitorApp(tk.Tk):
                 "label": label,
             })
 
-        if not profiles:
-            raise ValueError("Minimal isi satu SSID Wi-Fi.")
+        if not profiles and not bool(self.test_current_connection.get()):
+            raise ValueError("Minimal isi satu SSID Wi-Fi atau aktifkan Tes Ethernet / koneksi aktif.")
 
         return {
             "computer_name": self.computer_name.get().strip() or platform.node() or "Komputer",
@@ -479,6 +493,8 @@ class WifiMonitorApp(tk.Tk):
             "gap_between_tests_seconds": int(self.gap_seconds.get()),
             "connection_retries": int(self.connection_retries.get()),
             "restore_connection_after_tests": bool(self.restore_connection_after_tests.get()),
+            "test_current_connection": bool(self.test_current_connection.get()),
+            "current_connection_label": self.current_connection_label.get().strip() or "Ethernet / Koneksi Aktif",
             "shutdown_after_final": bool(self.shutdown_after_final.get()),
             "shutdown_delay_seconds": int(self.shutdown_delay.get()),
             "schedule": self._collect_schedule(),

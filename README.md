@@ -9,7 +9,7 @@ Daftar Wi-Fi bisa diisi lewat GUI atau file `config.json`.
 
 ## Fitur
 
-- GUI untuk mengisi nama komputer, SSID, password, nama di laporan, jadwal tes, dan opsi shutdown.
+- GUI untuk mengisi nama komputer, SSID, password, nama di laporan, tes Ethernet/koneksi aktif, jadwal tes, dan opsi shutdown.
 - Tab email opsional untuk mengirim laporan setelah run final pada hari atau tanggal tertentu.
 - CLI untuk dijalankan manual atau lewat scheduler.
 - Koneksi Wi-Fi lintas OS:
@@ -115,6 +115,8 @@ Alternatifnya, salin `config.example.json` menjadi `config.json` dan edit isinya
   "gap_between_tests_seconds": 20,
   "connection_retries": 2,
   "restore_connection_after_tests": true,
+  "test_current_connection": false,
+  "current_connection_label": "Ethernet / Koneksi Aktif",
   "shutdown_after_final": false,
   "shutdown_delay_seconds": 30,
   "schedule": {
@@ -163,6 +165,17 @@ Jika `restore_connection_after_tests` bernilai `true`, aplikasi menyimpan SSID
 Wi-Fi awal sebelum tes dan mengembalikannya setelah semua tes selesai. Jika
 sebelumnya tidak ada Wi-Fi aktif, Wi-Fi akan diputus setelah tes sehingga
 komputer bisa kembali mengandalkan ethernet atau koneksi utama OS.
+
+Jika `test_current_connection` bernilai `true`, aplikasi akan menjalankan satu
+speedtest pada koneksi yang sedang aktif tanpa mengganti Wi-Fi. Jika komputer
+sedang memakai kabel ethernet, baris laporan ini merepresentasikan koneksi
+ethernet. Setelah itu aplikasi tetap bisa melanjutkan tes Wi-Fi dari daftar
+SSID jika daftar Wi-Fi diisi.
+
+Catatan: aplikasi memakai library Python `speedtest-cli`, bukan aplikasi resmi
+Ookla Speedtest desktop. Hasil bisa berbeda karena pemilihan server, metode
+pengujian, adapter jaringan yang aktif, kondisi Wi-Fi/ethernet, firewall/proxy,
+dan beban komputer saat tes.
 
 ## Menjalankan Tes
 
