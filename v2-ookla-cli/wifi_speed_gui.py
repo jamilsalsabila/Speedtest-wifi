@@ -17,7 +17,7 @@ if "--monitor" in sys.argv:
 
 import tkinter as tk
 from datetime import date, datetime, timedelta
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
 from install_schedule import (
@@ -159,7 +159,13 @@ class WifiMonitorApp(tk.Tk):
         ).grid(row=7, column=1, sticky="w", padx=10, pady=8)
 
         ttk.Label(settings, text="Ookla CLI path").grid(row=8, column=0, sticky="w", padx=10, pady=8)
-        ttk.Entry(settings, textvariable=self.ookla_cli_path).grid(row=8, column=1, sticky="ew", padx=10, pady=8)
+        ookla_path = ttk.Frame(settings)
+        ookla_path.grid(row=8, column=1, sticky="ew", padx=10, pady=8)
+        ookla_path.columnconfigure(0, weight=1)
+        ttk.Entry(ookla_path, textvariable=self.ookla_cli_path).grid(row=0, column=0, sticky="ew")
+        ttk.Button(ookla_path, text="Browse...", command=self._browse_ookla_cli).grid(
+            row=0, column=1, sticky="e", padx=(8, 0)
+        )
         ttk.Label(settings, text="Server ID").grid(row=8, column=2, sticky="w", padx=10, pady=8)
         ttk.Entry(settings, textvariable=self.ookla_server_id, width=12).grid(row=8, column=3, sticky="w", padx=10, pady=8)
 
@@ -380,6 +386,18 @@ class WifiMonitorApp(tk.Tk):
         ttk.Spinbox(frame, from_=from_, to=to, increment=increment, textvariable=variable, width=8).pack(side=tk.LEFT)
         ttk.Label(frame, text=unit).pack(side=tk.LEFT, padx=(6, 0))
         return frame
+
+    def _browse_ookla_cli(self) -> None:
+        filetypes = [("Executable files", "*.exe"), ("All files", "*.*")]
+        if platform.system().lower() != "windows":
+            filetypes = [("All files", "*.*")]
+
+        selected = filedialog.askopenfilename(
+            title="Pilih Ookla Speedtest CLI",
+            filetypes=filetypes,
+        )
+        if selected:
+            self.ookla_cli_path.set(selected)
 
     def _load_existing_config(self) -> None:
         if CONFIG_FILE.exists():
