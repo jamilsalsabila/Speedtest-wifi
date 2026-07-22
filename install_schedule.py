@@ -17,6 +17,8 @@ CONFIG_FILE = BASE_DIR / "config.json"
 WINDOWS_TASK_NAME = "WiFi Speed Monitor"
 WINDOWS_FINAL_TASK_NAME = "WiFi Speed Monitor Final"
 MACOS_FINAL_LAUNCH_AGENT_LABEL = "wifi-speed-monitor-final"
+CRON_MARKER = "# wifi-speed-monitor"
+CRON_MARKER_RE = re.compile(r"# wifi-speed-monitor(?:\s|$)")
 LEGACY_WINDOWS_TASK_NAMES = [WINDOWS_TASK_NAME, WINDOWS_FINAL_TASK_NAME]
 LEGACY_WINDOWS_TASK_NAMES.extend(f"{WINDOWS_TASK_NAME} {index:02d}" for index in range(1, 145))
 LEGACY_MACOS_LAUNCH_AGENT_LABELS = [f"wifi-speed-monitor-{index}" for index in range(1, 145)]
@@ -195,20 +197,20 @@ def install_macos(times: list[str], final_time: str | None) -> None:
 def install_linux(times: list[str], final_time: str | None) -> None:
     current = run(["crontab", "-l"])
     lines = [] if current.returncode != 0 else command_stdout_lines(current)
-    lines = [line for line in lines if "# wifi-speed-monitor" not in line]
+    lines = [line for line in lines if not is_linux_v1_cron_line(line)]
 
     for time_value in times:
         hour, minute = parse_time(time_value)
         lines.append(
             f"{minute} {hour} * * * cd {shlex.quote(str(BASE_DIR))} && "
-            f"{quote_command(scheduler_command())} # wifi-speed-monitor"
+            f"{quote_command(scheduler_command())} {CRON_MARKER}"
         )
 
     if final_time:
         hour, minute = parse_time(final_time)
         lines.append(
             f"{minute} {hour} * * * cd {shlex.quote(str(BASE_DIR))} && "
-            f"{quote_command(scheduler_command(final=True))} # wifi-speed-monitor"
+            f"{quote_command(scheduler_command(final=True))} {CRON_MARKER}"
         )
 
     result = run(["crontab", "-"], input_text="\n".join(lines) + "\n")
@@ -297,7 +299,7 @@ def uninstall_linux() -> None:
     if current.returncode != 0:
         return
 
-    lines = [line for line in command_stdout_lines(current) if "# wifi-speed-monitor" not in line]
+    lines = [line for line in command_stdout_lines(current) if not is_linux_v1_cron_line(line)]
     if lines:
         result = run(["crontab", "-"], input_text="\n".join(lines) + "\n")
     else:
@@ -522,7 +524,7 @@ def linux_schedule_status() -> dict[str, object]:
     current = run(["crontab", "-l"])
     installed = []
     if current.returncode == 0:
-        installed = [line for line in command_stdout_lines(current) if "# wifi-speed-monitor" in line]
+        installed = [line for line in command_stdout_lines(current) if is_linux_v1_cron_line(line)]
     return {
         "os": "Linux",
         "installed_count": len(installed),
@@ -530,6 +532,10 @@ def linux_schedule_status() -> dict[str, object]:
         "loaded_count": len(installed),
         "loaded": installed,
     }
+
+
+def is_linux_v1_cron_line(line: str) -> bool:
+    return CRON_MARKER_RE.search(line) is not None
 
 
 def format_schedule_status(status: dict[str, object]) -> str:

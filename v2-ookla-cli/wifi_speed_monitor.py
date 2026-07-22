@@ -962,7 +962,7 @@ def write_graph_sheet(wb: Workbook, rows: list[dict[str, str]]) -> None:
     ws.freeze_panes = "B3"
     ws["A1"] = "Grafik Kecepatan Wi-Fi"
     ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"] = "Baris = tanggal/hari, kolom = jam. Nilai memakai rata-rata jika ada beberapa Wi-Fi pada jam yang sama."
+    ws["A2"] = "Baris = tanggal/hari/koneksi, kolom = jam. Nilai dirata-rata jika koneksi yang sama dites lebih dari sekali pada jam yang sama."
 
     times = sorted({row["waktu"][:5] for row in rows if row.get("waktu")})
     dates = sorted({row["tanggal"] for row in rows if row.get("tanggal")})
