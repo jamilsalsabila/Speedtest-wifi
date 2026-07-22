@@ -775,21 +775,56 @@ def perform_speedtest_ookla_cli(config: dict[str, Any]) -> dict[str, float]:
 
 def find_ookla_speedtest(configured_path: str) -> str:
     if configured_path:
-        path = Path(configured_path)
-        if path.exists():
-            return str(path)
+        candidates = [Path(configured_path)]
+        if not Path(configured_path).is_absolute():
+            candidates.append(BASE_DIR / configured_path)
+        for path in candidates:
+            if path.exists():
+                return str(path)
         found = shutil.which(configured_path)
         if found:
             return found
         raise WifiMonitorError(ERROR_SPEEDTEST_FAILED, f"Ookla Speedtest CLI tidak ditemukan: {configured_path}")
 
+    for candidate in ookla_speedtest_candidates():
+        if candidate.exists():
+            return str(candidate)
+
     found = shutil.which("speedtest")
+    if found:
+        return found
+    found = shutil.which("speedtest.exe")
     if found:
         return found
     raise WifiMonitorError(
         ERROR_SPEEDTEST_FAILED,
-        "Ookla Speedtest CLI belum tersedia. Isi path speedtest.exe resmi Ookla atau install CLI resmi Ookla.",
+        "Ookla Speedtest CLI belum tersedia. Isi path lengkap speedtest.exe resmi Ookla atau install CLI resmi Ookla.",
     )
+
+
+def ookla_speedtest_candidates() -> list[Path]:
+    candidates = [
+        BASE_DIR / "speedtest.exe",
+        BASE_DIR / "speedtest",
+        Path("/opt/homebrew/bin/speedtest"),
+        Path("/usr/local/bin/speedtest"),
+        Path("/opt/local/bin/speedtest"),
+        Path("/usr/bin/speedtest"),
+        Path("/snap/bin/speedtest"),
+    ]
+
+    for env_name in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+        value = os.environ.get(env_name)
+        if not value:
+            continue
+        base = Path(value)
+        candidates.extend([
+            base / "Speedtest" / "speedtest.exe",
+            base / "Ookla" / "Speedtest" / "speedtest.exe",
+            base / "Speedtest CLI" / "speedtest.exe",
+        ])
+
+    return candidates
 
 
 def ensure_standard_streams() -> None:

@@ -196,7 +196,13 @@ Pada versi 2, field `speedtest_backend` bisa diubah ke `ookla_cli`. Isi
 C:\Program Files\Speedtest\speedtest.exe
 ```
 
-Jika `ookla_cli_path` kosong, aplikasi mencari command `speedtest` dari `PATH`.
+Jika `ookla_cli_path` kosong, aplikasi mencari `speedtest` dari `PATH`, folder
+aplikasi/EXE, dan beberapa lokasi umum instalasi Ookla CLI. Di Windows scheduler
+kadang tidak membawa `PATH` yang sama seperti terminal, jadi cara paling aman
+adalah klik `Browse...` dan pilih path lengkap `speedtest.exe`, atau letakkan
+`speedtest.exe` satu folder dengan `WiFiSpeedMonitorV2.exe` lalu isi
+`speedtest.exe`.
+
 Field `ookla_server_id` opsional. Jika kosong, Ookla CLI memilih server terbaik
 secara otomatis. Penggunaan Ookla official CLI mengikuti license/EULA dari
 Ookla di komputer target.

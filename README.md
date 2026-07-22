@@ -184,8 +184,11 @@ Field `speedtest_backend` menentukan mesin speedtest yang dipakai:
 
 Jika memakai `ookla_cli`, isi `ookla_cli_path` dengan path executable Ookla CLI.
 Di macOS yang memasang Ookla CLI via Homebrew, field ini boleh dikosongkan jika
-command `speedtest` sudah tersedia di `PATH`. Field `ookla_server_id` opsional.
-Jika kosong, Ookla CLI memilih server terbaik secara otomatis.
+command `speedtest` sudah tersedia di `PATH`. Di Windows scheduler kadang tidak
+membawa `PATH` yang sama seperti terminal, jadi cara paling aman adalah isi path
+lengkap `speedtest.exe`, atau letakkan `speedtest.exe` satu folder dengan EXE
+aplikasi lalu isi `speedtest.exe`. Field `ookla_server_id` opsional. Jika
+kosong, Ookla CLI memilih server terbaik secara otomatis.
 
 Hasil bisa berbeda antar backend karena pemilihan server, metode pengujian,
 adapter jaringan yang aktif, kondisi Wi-Fi/ethernet, firewall/proxy, dan beban
