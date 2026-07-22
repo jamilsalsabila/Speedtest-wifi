@@ -925,6 +925,7 @@ def write_graph_sheet(wb: Workbook, rows: list[dict[str, str]]) -> None:
 
     times = sorted({row["waktu"][:5] for row in rows if row.get("waktu")})
     dates = sorted({row["tanggal"] for row in rows if row.get("tanggal")})
+    connections = sorted({row.get("wifi", "") for row in rows if row.get("wifi")})
     metrics = [
         ("Download (Mbps)", "download_mbps", True),
         ("Upload (Mbps)", "upload_mbps", True),
@@ -933,12 +934,12 @@ def write_graph_sheet(wb: Workbook, rows: list[dict[str, str]]) -> None:
 
     start_row = 4
     for title, key, higher_is_better in metrics:
-        start_row = write_metric_matrix(ws, rows, dates, times, title, key, higher_is_better, start_row)
+        start_row = write_metric_matrix(ws, rows, dates, connections, times, title, key, higher_is_better, start_row)
         start_row += 3
     if dates and times:
-        start_row = write_daily_charts(ws, rows, dates, times, start_row + 1)
+        start_row = write_daily_charts(ws, rows, dates, connections, times, start_row + 1)
 
-    ws.column_dimensions["A"].width = 24
+    ws.column_dimensions["A"].width = 42
     for column in range(2, len(times) + 2):
         ws.column_dimensions[get_column_letter(column)].width = 11
 
@@ -947,6 +948,7 @@ def write_metric_matrix(
     ws: Any,
     rows: list[dict[str, str]],
     dates: list[str],
+    connections: list[str],
     times: list[str],
     title: str,
     metric_key: str,
@@ -955,26 +957,31 @@ def write_metric_matrix(
 ) -> int:
     ws.cell(start_row, 1, title).font = Font(bold=True, size=12)
     header_row = start_row + 1
-    ws.cell(header_row, 1, "Tanggal / Hari")
+    ws.cell(header_row, 1, "Tanggal / Hari / Koneksi")
     for column, time_label in enumerate(times, start=2):
         ws.cell(header_row, column, time_label)
 
-    buckets: dict[tuple[str, str], list[float]] = {}
+    buckets: dict[tuple[str, str, str], list[float]] = {}
     for row in rows:
         value = safe_float(row.get(metric_key, ""))
         if value is None:
             continue
-        key = (row["tanggal"], row["waktu"][:5])
+        key = (row["tanggal"], row.get("wifi", ""), row["waktu"][:5])
         buckets.setdefault(key, []).append(value)
 
-    for row_index, date_text in enumerate(dates, start=header_row + 1):
-        ws.cell(row_index, 1, f"{date_text} ({day_name(date_text)})")
-        for column, time_label in enumerate(times, start=2):
-            values = buckets.get((date_text, time_label), [])
-            if values:
-                ws.cell(row_index, column, round(sum(values) / len(values), 2))
+    row_index = header_row + 1
+    for date_text in dates:
+        for connection in connections:
+            if not any(buckets.get((date_text, connection, time_label), []) for time_label in times):
+                continue
+            ws.cell(row_index, 1, f"{date_text} ({day_name(date_text)}) - {connection}")
+            for column, time_label in enumerate(times, start=2):
+                values = buckets.get((date_text, connection, time_label), [])
+                if values:
+                    ws.cell(row_index, column, round(sum(values) / len(values), 2))
+            row_index += 1
 
-    end_row = header_row + len(dates)
+    end_row = max(header_row + 1, row_index - 1)
     end_column = max(2, len(times) + 1)
     for row in ws.iter_rows(min_row=header_row, max_row=end_row, min_col=1, max_col=end_column):
         for cell in row:
@@ -1008,13 +1015,17 @@ def write_daily_charts(
     ws: Any,
     rows: list[dict[str, str]],
     dates: list[str],
+    connections: list[str],
     times: list[str],
     start_row: int,
 ) -> int:
     ws.cell(start_row, 1, "Plot Harian").font = Font(bold=True, size=12)
     row_anchor = start_row + 2
     for date_text in dates:
-        row_anchor = write_daily_chart_pair(ws, rows, date_text, times, row_anchor) + 3
+        for connection in connections:
+            if not has_connection_data(rows, date_text, connection):
+                continue
+            row_anchor = write_daily_chart_pair(ws, rows, date_text, connection, times, row_anchor) + 3
     return row_anchor
 
 
@@ -1022,10 +1033,11 @@ def write_daily_chart_pair(
     ws: Any,
     rows: list[dict[str, str]],
     date_text: str,
+    connection: str,
     times: list[str],
     start_row: int,
 ) -> int:
-    label = f"{day_name(date_text)}, {date_text}"
+    label = f"{day_name(date_text)}, {date_text} - {connection}"
     ws.cell(start_row, 1, label).font = Font(bold=True)
     header_row = start_row + 1
     headers = ["Jam", "Download (Mbps)", "Upload (Mbps)", "Ping (ms)"]
@@ -1037,9 +1049,9 @@ def write_daily_chart_pair(
 
     data_row = header_row + 1
     for time_label in times:
-        download = average_metric(rows, date_text, time_label, "download_mbps")
-        upload = average_metric(rows, date_text, time_label, "upload_mbps")
-        ping = average_metric(rows, date_text, time_label, "ping_ms")
+        download = average_metric(rows, date_text, time_label, "download_mbps", connection)
+        upload = average_metric(rows, date_text, time_label, "upload_mbps", connection)
+        ping = average_metric(rows, date_text, time_label, "ping_ms", connection)
         if download is None and upload is None and ping is None:
             continue
         ws.cell(data_row, 1, time_label)
@@ -1081,11 +1093,22 @@ def write_daily_chart_pair(
     return max(data_row, start_row + 16)
 
 
-def average_metric(rows: list[dict[str, str]], date_text: str, time_label: str, metric_key: str) -> float | None:
+def has_connection_data(rows: list[dict[str, str]], date_text: str, connection: str) -> bool:
+    return any(row.get("tanggal") == date_text and row.get("wifi", "") == connection for row in rows)
+
+
+def average_metric(
+    rows: list[dict[str, str]],
+    date_text: str,
+    time_label: str,
+    metric_key: str,
+    connection: str | None = None,
+) -> float | None:
     values = [
         value
         for row in rows
         if row.get("tanggal") == date_text and row.get("waktu", "")[:5] == time_label
+        if connection is None or row.get("wifi", "") == connection
         for value in [safe_float(row.get(metric_key, ""))]
         if value is not None
     ]

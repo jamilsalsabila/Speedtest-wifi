@@ -31,8 +31,10 @@ Daftar Wi-Fi bisa diisi lewat GUI atau file `config.json`.
 
 Laporan Excel berisi sheet `Hasil Speedtest` dan `Grafik`. Sheet `Grafik`
 dibuat otomatis sebagai matriks tanggal/hari pada baris dan jam pada kolom,
-dengan heatmap serta grafik garis untuk download, upload, dan ping. PDF harian
-memakai ukuran A3 landscape supaya tabel panjang tidak mudah terpotong.
+dengan heatmap serta grafik garis untuk download, upload, dan ping. Data
+Ethernet/koneksi aktif dan tiap Wi-Fi dipisahkan agar tidak dirata-ratakan
+bersama pada jam yang sama. PDF harian memakai ukuran A3 landscape supaya tabel
+panjang tidak mudah terpotong.
 
 ## Instalasi
 
