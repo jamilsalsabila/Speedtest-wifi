@@ -47,6 +47,9 @@ class WifiMonitorApp(tk.Tk):
         self.restore_connection_after_tests = tk.BooleanVar(value=True)
         self.test_current_connection = tk.BooleanVar(value=False)
         self.current_connection_label = tk.StringVar(value="Ethernet / Koneksi Aktif")
+        self.speedtest_backend = tk.StringVar(value="speedtest_cli")
+        self.ookla_cli_path = tk.StringVar(value="")
+        self.ookla_server_id = tk.StringVar(value="")
         self.shutdown_after_final = tk.BooleanVar(value=False)
         self.shutdown_delay = tk.IntVar(value=30)
         self.schedule_enabled = tk.BooleanVar(value=True)
@@ -144,6 +147,22 @@ class WifiMonitorApp(tk.Tk):
         ).grid(row=6, column=0, sticky="w", padx=10, pady=8)
         ttk.Entry(settings, textvariable=self.current_connection_label).grid(
             row=6, column=1, sticky="ew", padx=10, pady=8
+        )
+
+        ttk.Label(settings, text="Backend speedtest").grid(row=7, column=0, sticky="w", padx=10, pady=8)
+        ttk.Combobox(
+            settings,
+            textvariable=self.speedtest_backend,
+            values=("speedtest_cli", "ookla_cli"),
+            state="readonly",
+            width=18,
+        ).grid(row=7, column=1, sticky="w", padx=10, pady=8)
+
+        ttk.Label(settings, text="Ookla CLI path").grid(row=8, column=0, sticky="w", padx=10, pady=8)
+        ttk.Entry(settings, textvariable=self.ookla_cli_path).grid(row=8, column=1, sticky="ew", padx=10, pady=8)
+        ttk.Label(settings, text="Server ID").grid(row=8, column=2, sticky="w", padx=10, pady=8)
+        ttk.Entry(settings, textvariable=self.ookla_server_id, width=12).grid(
+            row=8, column=3, sticky="w", padx=10, pady=8
         )
 
         profiles = ttk.LabelFrame(config_tab, text="Langkah 2 - Daftar Wi-Fi")
@@ -380,6 +399,9 @@ class WifiMonitorApp(tk.Tk):
         self.restore_connection_after_tests.set(bool(config.get("restore_connection_after_tests", True)))
         self.test_current_connection.set(bool(config.get("test_current_connection", False)))
         self.current_connection_label.set(str(config.get("current_connection_label") or "Ethernet / Koneksi Aktif"))
+        self.speedtest_backend.set(str(config.get("speedtest_backend", "speedtest_cli")))
+        self.ookla_cli_path.set(str(config.get("ookla_cli_path", "")))
+        self.ookla_server_id.set(str(config.get("ookla_server_id", "")))
         self.shutdown_after_final.set(bool(config.get("shutdown_after_final", False)))
         self.shutdown_delay.set(int(config.get("shutdown_delay_seconds", 30)))
         schedule = config.get("schedule") or {}
@@ -495,6 +517,9 @@ class WifiMonitorApp(tk.Tk):
             "restore_connection_after_tests": bool(self.restore_connection_after_tests.get()),
             "test_current_connection": bool(self.test_current_connection.get()),
             "current_connection_label": self.current_connection_label.get().strip() or "Ethernet / Koneksi Aktif",
+            "speedtest_backend": self.speedtest_backend.get().strip() or "speedtest_cli",
+            "ookla_cli_path": self.ookla_cli_path.get().strip(),
+            "ookla_server_id": self.ookla_server_id.get().strip(),
             "shutdown_after_final": bool(self.shutdown_after_final.get()),
             "shutdown_delay_seconds": int(self.shutdown_delay.get()),
             "schedule": self._collect_schedule(),

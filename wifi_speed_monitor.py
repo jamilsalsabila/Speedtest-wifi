@@ -708,7 +708,14 @@ def is_connected_to(ssid: str) -> bool:
     return False
 
 
-def perform_speedtest() -> dict[str, float]:
+def perform_speedtest(config: dict[str, Any] | None = None) -> dict[str, float]:
+    backend = str((config or {}).get("speedtest_backend", "speedtest_cli")).strip() or "speedtest_cli"
+    if backend == "ookla_cli":
+        return perform_speedtest_ookla_cli(config or {})
+    return perform_speedtest_python()
+
+
+def perform_speedtest_python() -> dict[str, float]:
     ensure_standard_streams()
     try:
         import speedtest
@@ -732,6 +739,57 @@ def perform_speedtest() -> dict[str, float]:
         "upload_mbps": round(float(data.get("upload", upload)) / 1_000_000, 2),
         "ping_ms": round(float(data.get("ping", 0)), 2),
     }
+
+
+def perform_speedtest_ookla_cli(config: dict[str, Any]) -> dict[str, float]:
+    executable = find_ookla_speedtest(str(config.get("ookla_cli_path", "")).strip())
+    args = [executable, "--format=json", "--accept-license", "--accept-gdpr"]
+    server_id = str(config.get("ookla_server_id", "")).strip()
+    if server_id:
+        args.extend(["--server-id", server_id])
+
+    result = run(args, timeout=300, env=speedtest_env())
+    output = command_output(result)
+    if result.returncode != 0:
+        error_type = ERROR_NO_INTERNET if "network" in output.lower() or "timed out" in output.lower() else ERROR_SPEEDTEST_FAILED
+        raise WifiMonitorError(error_type, f"Ookla Speedtest CLI gagal: {output}")
+
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        raise WifiMonitorError(ERROR_SPEEDTEST_FAILED, f"Output Ookla Speedtest CLI bukan JSON valid: {output[:500]}") from exc
+
+    try:
+        download_mbps = float(data["download"]["bandwidth"]) * 8 / 1_000_000
+        upload_mbps = float(data["upload"]["bandwidth"]) * 8 / 1_000_000
+        ping_ms = float(data.get("ping", {}).get("latency", 0))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise WifiMonitorError(ERROR_SPEEDTEST_FAILED, f"Output Ookla Speedtest CLI tidak lengkap: {(result.stdout or '{}')[:500]}") from exc
+
+    return {
+        "download_mbps": round(download_mbps, 2),
+        "upload_mbps": round(upload_mbps, 2),
+        "ping_ms": round(ping_ms, 2),
+    }
+
+
+def find_ookla_speedtest(configured_path: str) -> str:
+    if configured_path:
+        path = Path(configured_path)
+        if path.exists():
+            return str(path)
+        found = shutil.which(configured_path)
+        if found:
+            return found
+        raise WifiMonitorError(ERROR_SPEEDTEST_FAILED, f"Ookla Speedtest CLI tidak ditemukan: {configured_path}")
+
+    found = shutil.which("speedtest")
+    if found:
+        return found
+    raise WifiMonitorError(
+        ERROR_SPEEDTEST_FAILED,
+        "Ookla Speedtest CLI belum tersedia. Isi path speedtest.exe resmi Ookla atau install CLI resmi Ookla.",
+    )
 
 
 def ensure_standard_streams() -> None:
@@ -1369,7 +1427,7 @@ def run_monitor(
                 connect_wifi(profile, settle_seconds, connection_retries)
             else:
                 logging.info("Menguji koneksi aktif tanpa mengganti Wi-Fi.")
-            result = perform_speedtest()
+            result = perform_speedtest(config)
             row.update(result)
             row["status"] = "OK"
             logging.info(

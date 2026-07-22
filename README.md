@@ -9,7 +9,7 @@ Daftar Wi-Fi bisa diisi lewat GUI atau file `config.json`.
 
 ## Fitur
 
-- GUI untuk mengisi nama komputer, SSID, password, nama di laporan, tes Ethernet/koneksi aktif, jadwal tes, dan opsi shutdown.
+- GUI untuk mengisi nama komputer, SSID, password, nama di laporan, backend speedtest, tes Ethernet/koneksi aktif, jadwal tes, dan opsi shutdown.
 - Tab email opsional untuk mengirim laporan setelah run final pada hari atau tanggal tertentu.
 - CLI untuk dijalankan manual atau lewat scheduler.
 - Koneksi Wi-Fi lintas OS:
@@ -119,6 +119,9 @@ Alternatifnya, salin `config.example.json` menjadi `config.json` dan edit isinya
   "restore_connection_after_tests": true,
   "test_current_connection": false,
   "current_connection_label": "Ethernet / Koneksi Aktif",
+  "speedtest_backend": "speedtest_cli",
+  "ookla_cli_path": "",
+  "ookla_server_id": "",
   "shutdown_after_final": false,
   "shutdown_delay_seconds": 30,
   "schedule": {
@@ -174,10 +177,19 @@ sedang memakai kabel ethernet, baris laporan ini merepresentasikan koneksi
 ethernet. Setelah itu aplikasi tetap bisa melanjutkan tes Wi-Fi dari daftar
 SSID jika daftar Wi-Fi diisi.
 
-Catatan: aplikasi memakai library Python `speedtest-cli`, bukan aplikasi resmi
-Ookla Speedtest desktop. Hasil bisa berbeda karena pemilihan server, metode
-pengujian, adapter jaringan yang aktif, kondisi Wi-Fi/ethernet, firewall/proxy,
-dan beban komputer saat tes.
+Field `speedtest_backend` menentukan mesin speedtest yang dipakai:
+
+- `speedtest_cli`: memakai library Python `speedtest-cli`.
+- `ookla_cli`: memakai Ookla official CLI eksternal.
+
+Jika memakai `ookla_cli`, isi `ookla_cli_path` dengan path executable Ookla CLI.
+Di macOS yang memasang Ookla CLI via Homebrew, field ini boleh dikosongkan jika
+command `speedtest` sudah tersedia di `PATH`. Field `ookla_server_id` opsional.
+Jika kosong, Ookla CLI memilih server terbaik secara otomatis.
+
+Hasil bisa berbeda antar backend karena pemilihan server, metode pengujian,
+adapter jaringan yang aktif, kondisi Wi-Fi/ethernet, firewall/proxy, dan beban
+komputer saat tes.
 
 ## Menjalankan Tes
 
