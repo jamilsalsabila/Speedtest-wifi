@@ -177,6 +177,8 @@ Jika `restore_connection_after_tests` bernilai `true`, aplikasi menyimpan SSID
 Wi-Fi awal sebelum tes dan mengembalikannya setelah semua tes selesai. Jika
 sebelumnya tidak ada Wi-Fi aktif, Wi-Fi akan diputus setelah tes sehingga
 komputer bisa kembali mengandalkan ethernet atau koneksi utama OS.
+Ethernet tidak memiliki SSID, jadi pesan restore yang menyebut nama jaringan
+selalu berarti SSID Wi-Fi, bukan nama koneksi ethernet.
 
 Jika `test_current_connection` bernilai `true`, aplikasi akan menjalankan satu
 speedtest pada koneksi yang sedang aktif tanpa mengganti Wi-Fi. Jika komputer

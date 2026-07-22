@@ -689,6 +689,12 @@ def restore_wifi_connection(initial_ssid: str | None, config: dict[str, Any], se
         logging.info("Wi-Fi diputus karena sebelum tes tidak ada SSID Wi-Fi aktif.")
 
 
+def restore_status_message(initial_ssid: str | None) -> str:
+    if initial_ssid:
+        return f"Wi-Fi dikembalikan ke SSID awal: {initial_ssid}."
+    return "Wi-Fi diputus; OS akan memakai koneksi non-Wi-Fi jika tersedia, misalnya ethernet."
+
+
 def is_connected_to(ssid: str) -> bool:
     system = platform.system().lower()
 
@@ -1489,7 +1495,7 @@ def run_monitor(
         try:
             restore_wifi_connection(initial_ssid, config, settle_seconds, connection_retries)
             if result_callback is not None:
-                result_callback({"status": "INFO", "wifi": "Restore", "error": f"Koneksi dikembalikan ke {initial_ssid or 'mode non-Wi-Fi'}."})
+                result_callback({"status": "INFO", "wifi": "Restore", "error": restore_status_message(initial_ssid)})
         except Exception:
             logging.exception("Gagal mengembalikan koneksi awal.")
 
