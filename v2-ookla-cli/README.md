@@ -278,12 +278,15 @@ terjadi jika task lama dibuat oleh Administrator, user lain, atau dibatasi
 policy Windows.
 
 Jika jadwal sudah tidak dibutuhkan, klik `Hapus Jadwal` di GUI. Aplikasi hanya
-menghapus jadwal milik Wi-Fi Speed Monitor:
+menghapus jadwal milik Wi-Fi Speed Monitor V2:
 
-- Windows: task bernama `WiFi Speed Monitor`, `WiFi Speed Monitor NN`, dan
-  `WiFi Speed Monitor Final`.
-- Linux: baris cron dengan marker `# wifi-speed-monitor`.
-- macOS: LaunchAgent `local.wifi-speed-monitor-*.plist`.
+- Windows: task bernama `WiFi Speed Monitor V2`, `WiFi Speed Monitor V2 NN`,
+  dan `WiFi Speed Monitor V2 Final`.
+- Linux: baris cron dengan marker `# wifi-speed-monitor-v2`.
+- macOS: LaunchAgent `local.wifi-speed-monitor-v2-*.plist`.
+
+Nama scheduler V2 berbeda dari versi utama, sehingga V1 dan V2 bisa dipasang
+berdampingan.
 
 Via CLI, `install_schedule.py` otomatis membaca jadwal dari `config.json`:
 

@@ -14,12 +14,14 @@ from pathlib import Path
 BASE_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 MONITOR = BASE_DIR / "wifi_speed_monitor.py"
 CONFIG_FILE = BASE_DIR / "config.json"
-WINDOWS_TASK_NAME = "WiFi Speed Monitor"
-WINDOWS_FINAL_TASK_NAME = "WiFi Speed Monitor Final"
-MACOS_FINAL_LAUNCH_AGENT_LABEL = "wifi-speed-monitor-final"
+WINDOWS_TASK_NAME = "WiFi Speed Monitor V2"
+WINDOWS_FINAL_TASK_NAME = "WiFi Speed Monitor V2 Final"
+MACOS_LAUNCH_AGENT_PREFIX = "wifi-speed-monitor-v2"
+MACOS_FINAL_LAUNCH_AGENT_LABEL = "wifi-speed-monitor-v2-final"
+CRON_MARKER = "# wifi-speed-monitor-v2"
 LEGACY_WINDOWS_TASK_NAMES = [WINDOWS_TASK_NAME, WINDOWS_FINAL_TASK_NAME]
 LEGACY_WINDOWS_TASK_NAMES.extend(f"{WINDOWS_TASK_NAME} {index:02d}" for index in range(1, 145))
-LEGACY_MACOS_LAUNCH_AGENT_LABELS = [f"wifi-speed-monitor-{index}" for index in range(1, 145)]
+LEGACY_MACOS_LAUNCH_AGENT_LABELS = [f"{MACOS_LAUNCH_AGENT_PREFIX}-{index}" for index in range(1, 145)]
 LEGACY_MACOS_LAUNCH_AGENT_LABELS.append(MACOS_FINAL_LAUNCH_AGENT_LABEL)
 
 
@@ -47,7 +49,7 @@ def scheduler_error(result: subprocess.CompletedProcess[str]) -> RuntimeError:
     if platform.system().lower() == "windows" and is_access_denied(output):
         output = (
             f"{output}\n\n"
-            "Windows menolak akses ke Task Scheduler. Jalankan WiFiSpeedMonitor.exe "
+            "Windows menolak akses ke Task Scheduler. Jalankan WiFiSpeedMonitorV2.exe "
             "atau terminal Python dengan klik kanan lalu Run as administrator, "
             "kemudian klik Pasang Jadwal lagi."
         )
@@ -146,9 +148,9 @@ def install_macos(times: list[str], final_time: str | None) -> None:
 
     uninstall_macos()
 
-    entries = [(f"wifi-speed-monitor-{i}", time_value, False) for i, time_value in enumerate(times, start=1)]
+    entries = [(f"{MACOS_LAUNCH_AGENT_PREFIX}-{i}", time_value, False) for i, time_value in enumerate(times, start=1)]
     if final_time:
-        entries.append(("wifi-speed-monitor-final", final_time, True))
+        entries.append((MACOS_FINAL_LAUNCH_AGENT_LABEL, final_time, True))
 
     for label, time_value, is_final in entries:
         hour, minute = parse_time(time_value)
@@ -195,20 +197,20 @@ def install_macos(times: list[str], final_time: str | None) -> None:
 def install_linux(times: list[str], final_time: str | None) -> None:
     current = run(["crontab", "-l"])
     lines = [] if current.returncode != 0 else command_stdout_lines(current)
-    lines = [line for line in lines if "# wifi-speed-monitor" not in line]
+    lines = [line for line in lines if CRON_MARKER not in line]
 
     for time_value in times:
         hour, minute = parse_time(time_value)
         lines.append(
             f"{minute} {hour} * * * cd {shlex.quote(str(BASE_DIR))} && "
-            f"{quote_command(scheduler_command())} # wifi-speed-monitor"
+            f"{quote_command(scheduler_command())} {CRON_MARKER}"
         )
 
     if final_time:
         hour, minute = parse_time(final_time)
         lines.append(
             f"{minute} {hour} * * * cd {shlex.quote(str(BASE_DIR))} && "
-            f"{quote_command(scheduler_command(final=True))} # wifi-speed-monitor"
+            f"{quote_command(scheduler_command(final=True))} {CRON_MARKER}"
         )
 
     result = run(["crontab", "-"], input_text="\n".join(lines) + "\n")
@@ -297,7 +299,7 @@ def uninstall_linux() -> None:
     if current.returncode != 0:
         return
 
-    lines = [line for line in command_stdout_lines(current) if "# wifi-speed-monitor" not in line]
+    lines = [line for line in command_stdout_lines(current) if CRON_MARKER not in line]
     if lines:
         result = run(["crontab", "-"], input_text="\n".join(lines) + "\n")
     else:
@@ -426,7 +428,7 @@ def schedule_status_for_current_os() -> dict[str, object]:
 def windows_schedule_status() -> dict[str, object]:
     installed = windows_app_task_names()
     return {
-        "os": "Windows",
+        "os": "Windows V2",
         "installed_count": len(installed),
         "installed": installed,
         "loaded_count": len(installed),
@@ -484,7 +486,7 @@ def macos_schedule_status() -> dict[str, object]:
             loaded.append(label)
 
     return {
-        "os": "macOS",
+        "os": "macOS V2",
         "installed_count": len(installed),
         "installed": installed,
         "loaded_count": len(loaded),
@@ -495,7 +497,7 @@ def macos_schedule_status() -> dict[str, object]:
 def macos_app_launch_agent_labels() -> list[str]:
     launch_agents = Path.home() / "Library" / "LaunchAgents"
     labels = []
-    for plist in launch_agents.glob("local.wifi-speed-monitor*.plist"):
+    for plist in launch_agents.glob(f"local.{MACOS_LAUNCH_AGENT_PREFIX}*.plist"):
         label = plist.stem.removeprefix("local.")
         if is_macos_app_launch_agent(label):
             labels.append(label)
@@ -505,12 +507,12 @@ def macos_app_launch_agent_labels() -> list[str]:
 def is_macos_app_launch_agent(label: str) -> bool:
     return (
         label == MACOS_FINAL_LAUNCH_AGENT_LABEL
-        or re.fullmatch(r"wifi-speed-monitor-\d+", label) is not None
+        or re.fullmatch(rf"{re.escape(MACOS_LAUNCH_AGENT_PREFIX)}-\d+", label) is not None
     )
 
 
 def macos_launch_agent_sort_key(label: str) -> tuple[int, int, str]:
-    match = re.fullmatch(r"wifi-speed-monitor-(\d+)", label)
+    match = re.fullmatch(rf"{re.escape(MACOS_LAUNCH_AGENT_PREFIX)}-(\d+)", label)
     if match:
         return (0, int(match.group(1)), label)
     if label == MACOS_FINAL_LAUNCH_AGENT_LABEL:
@@ -522,9 +524,9 @@ def linux_schedule_status() -> dict[str, object]:
     current = run(["crontab", "-l"])
     installed = []
     if current.returncode == 0:
-        installed = [line for line in command_stdout_lines(current) if "# wifi-speed-monitor" in line]
+        installed = [line for line in command_stdout_lines(current) if CRON_MARKER in line]
     return {
-        "os": "Linux",
+        "os": "Linux V2",
         "installed_count": len(installed),
         "installed": installed,
         "loaded_count": len(installed),
